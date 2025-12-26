@@ -9,6 +9,7 @@ import ProfilePage from './pages/ProfilePage';
 import EditProfilePage from './pages/EditProfilePage';
 import FeedPage from './pages/FeedPage';
 import BlogPage from './pages/BlogPage';
+import BlogPostDetailPage from './pages/BlogPostDetailPage';
 import CreateBlogPage from './pages/CreateBlogPage';
 import MessagesPage from './pages/MessagesPage';
 import TrendingPage from './pages/TrendingPage';
@@ -44,7 +45,7 @@ function App() {
                         <Route path="/feed" element={<FeedPage />} />
                         <Route path="/blog" element={<BlogPage />} />
                         <Route path="/blog/new" element={<CreateBlogPage />} />
-                        <Route path="/blog/:id" element={<FeedPage />} />
+                        <Route path="/blog/:id" element={<BlogPostDetailPage />} />
                         <Route path="/trending" element={<TrendingPage />} />
                         <Route path="/hashtag/:tag" element={<TrendingPage />} />
                         <Route path="/profile/:id" element={<ProfilePage />} />
