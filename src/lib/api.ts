@@ -1,158 +1,4 @@
 import { supabase } from './supabase';
-import { Match } from '../types';
-import { FunctionsHttpError } from '@supabase/supabase-js';
-
-export const syncSportsData = async (): Promise<{ success: boolean; error?: string }> => {
-  try {
-    const { data, error } = await supabase.functions.invoke('sync-sports-data');
-    
-    if (error) {
-      let errorMessage = error.message;
-      if (error instanceof FunctionsHttpError) {
-        try {
-          const statusCode = error.context?.status ?? 500;
-          const textContent = await error.context?.text();
-          errorMessage = `[Code: ${statusCode}] ${textContent || error.message || 'Unknown error'}`;
-        } catch {
-          errorMessage = `${error.message || 'Failed to sync sports data'}`;
-        }
-      }
-      return { success: false, error: errorMessage };
-    }
-
-    return { success: true };
-  } catch (error: any) {
-    return { success: false, error: error.message };
-  }
-};
-
-export const fetchMatches = async (): Promise<Match[]> => {
-  try {
-    const { data, error } = await supabase
-      .from('matches')
-      .select('*')
-      .order('match_date', { ascending: true });
-
-    if (error) throw error;
-
-    return (data || []).map((match: any) => ({
-      id: match.id,
-      sport: match.sport,
-      league: match.league_name,
-      homeTeam: {
-        id: match.home_team_id || '',
-        name: match.home_team_name,
-        logo: match.home_team_logo || '',
-        score: match.home_team_score,
-      },
-      awayTeam: {
-        id: match.away_team_id || '',
-        name: match.away_team_name,
-        logo: match.away_team_logo || '',
-        score: match.away_team_score,
-      },
-      status: match.status,
-      time: match.match_time,
-      minute: match.match_minute,
-    }));
-  } catch (error: any) {
-    console.error('Error fetching matches:', error);
-    return [];
-  }
-};
-
-export const fetchMatchById = async (id: string): Promise<Match | null> => {
-  try {
-    const { data, error } = await supabase
-      .from('matches')
-      .select('*')
-      .eq('id', id)
-      .single();
-
-    if (error) throw error;
-    if (!data) return null;
-
-    return {
-      id: data.id,
-      sport: data.sport,
-      league: data.league_name,
-      homeTeam: {
-        id: data.home_team_id || '',
-        name: data.home_team_name,
-        logo: data.home_team_logo || '',
-        score: data.home_team_score,
-      },
-      awayTeam: {
-        id: data.away_team_id || '',
-        name: data.away_team_name,
-        logo: data.away_team_logo || '',
-        score: data.away_team_score,
-      },
-      status: data.status,
-      time: data.match_time,
-      minute: data.match_minute,
-    };
-  } catch (error: any) {
-    console.error('Error fetching match:', error);
-    return null;
-  }
-};
-
-export const syncSportsNews = async (): Promise<{ success: boolean; error?: string }> => {
-  try {
-    const { data, error } = await supabase.functions.invoke('sync-sports-news');
-    
-    if (error) {
-      let errorMessage = error.message;
-      if (error instanceof FunctionsHttpError) {
-        try {
-          const statusCode = error.context?.status ?? 500;
-          const textContent = await error.context?.text();
-          errorMessage = `[Code: ${statusCode}] ${textContent || error.message || 'Unknown error'}`;
-        } catch {
-          errorMessage = `${error.message || 'Failed to sync sports news'}`;
-        }
-      }
-      return { success: false, error: errorMessage };
-    }
-
-    return { success: true };
-  } catch (error: any) {
-    return { success: false, error: error.message };
-  }
-};
-
-export const fetchNews = async (category?: string) => {
-  try {
-    let query = supabase
-      .from('news_articles')
-      .select('*')
-      .order('published_at', { ascending: false })
-      .limit(50);
-
-    if (category && category !== 'all') {
-      query = query.eq('category', category);
-    }
-
-    const { data, error } = await query;
-
-    if (error) throw error;
-
-    return (data || []).map((article: any) => ({
-      id: article.id,
-      title: article.title,
-      excerpt: article.excerpt || '',
-      content: article.content || '',
-      image: article.image || '',
-      category: article.category,
-      publishedAt: article.published_at,
-      readTime: '3 min read',
-    }));
-  } catch (error: any) {
-    console.error('Error fetching news:', error);
-    return [];
-  }
-};
 
 // ============================================
 // USER PROFILE FUNCTIONS
@@ -192,6 +38,11 @@ export const updateUserProfile = async (userId: string, updates: any) => {
 
 export const uploadAvatar = async (userId: string, file: File) => {
   try {
+    // Check file size (max 2MB)
+    if (file.size > 2 * 1024 * 1024) {
+      throw new Error('File size must be less than 2MB');
+    }
+
     const fileExt = file.name.split('.').pop();
     const fileName = `${userId}/avatar.${fileExt}`;
 
@@ -270,60 +121,6 @@ export const checkIsFollowing = async (userId: string) => {
 };
 
 // ============================================
-// ARTICLE COMMENTS FUNCTIONS
-// ============================================
-
-export const getArticleComments = async (articleId: string) => {
-  try {
-    const { data, error } = await supabase
-      .from('article_comments')
-      .select('*, user_profiles(id, username, avatar_url)')
-      .eq('article_id', articleId)
-      .is('parent_id', null)
-      .order('created_at', { ascending: false });
-
-    if (error) throw error;
-    return data || [];
-  } catch (error: any) {
-    console.error('Error fetching comments:', error);
-    return [];
-  }
-};
-
-export const addComment = async (articleId: string, content: string, parentId?: string) => {
-  try {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) throw new Error('Not authenticated');
-
-    const { data, error } = await supabase.from('article_comments').insert({
-      article_id: articleId,
-      user_id: user.id,
-      content,
-      parent_id: parentId || null,
-    }).select('*, user_profiles(id, username, avatar_url)').single();
-
-    if (error) throw error;
-    return { data, error: null };
-  } catch (error: any) {
-    return { data: null, error: error.message };
-  }
-};
-
-export const deleteComment = async (commentId: string) => {
-  try {
-    const { error } = await supabase
-      .from('article_comments')
-      .delete()
-      .eq('id', commentId);
-
-    if (error) throw error;
-    return { success: true, error: null };
-  } catch (error: any) {
-    return { success: false, error: error.message };
-  }
-};
-
-// ============================================
 // BLOG POSTS FUNCTIONS
 // ============================================
 
@@ -366,7 +163,6 @@ export const getFeedPosts = async (limit = 30) => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return [];
 
-    // Get posts from users you follow + your own posts
     const { data, error } = await supabase
       .from('blog_posts')
       .select('*, user_profiles(id, username, avatar_url)')
@@ -397,7 +193,6 @@ export const getBlogPostById = async (postId: string) => {
   }
 };
 
-// Extract hashtags from content
 const extractHashtags = (content: string): string[] => {
   const hashtagRegex = /#(\w+)/g;
   const hashtags = [];
@@ -408,7 +203,6 @@ const extractHashtags = (content: string): string[] => {
   return [...new Set(hashtags)];
 };
 
-// Extract mentions from content
 const extractMentions = (content: string): string[] => {
   const mentionRegex = /@(\w+)/g;
   const mentions = [];
@@ -424,7 +218,6 @@ export const createBlogPost = async (post: any) => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error('Not authenticated');
 
-    // Extract hashtags and mentions from content
     const hashtags = extractHashtags(post.content + ' ' + post.title);
     const mentions = extractMentions(post.content);
 
@@ -442,7 +235,6 @@ export const createBlogPost = async (post: any) => {
 
     if (error) throw error;
 
-    // Process hashtags
     for (const tag of hashtags) {
       const { data: existingTag } = await supabase
         .from('hashtags')
@@ -476,7 +268,6 @@ export const createBlogPost = async (post: any) => {
       }
     }
 
-    // Process mentions
     for (const mention of mentions) {
       const { data: mentionedUser } = await supabase
         .from('user_profiles')
@@ -643,12 +434,20 @@ export const checkIsReposted = async (postId: string) => {
 
 export const incrementShares = async (postId: string) => {
   try {
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('blog_posts')
-      .update({ shares_count: supabase.raw('shares_count + 1') })
-      .eq('id', postId);
+      .select('shares_count')
+      .eq('id', postId)
+      .single();
 
     if (error) throw error;
+
+    const { error: updateError } = await supabase
+      .from('blog_posts')
+      .update({ shares_count: (data.shares_count || 0) + 1 })
+      .eq('id', postId);
+
+    if (updateError) throw updateError;
     return { success: true, error: null };
   } catch (error: any) {
     return { success: false, error: error.message };

@@ -1,175 +1,178 @@
 import { useState, useEffect } from 'react';
-import LiveMatchCard from '../components/features/LiveMatchCard';
-import { Match } from '../constants/mockData';
-import { fetchMatches, syncSportsData } from '../lib/api';
-import { RefreshCw, Loader2 } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { useAuth } from '../stores/authStore';
+import { getFeedPosts } from '../lib/api';
+import { Loader2, User, Clock, Eye, MessageCircle, Bookmark, Share2 } from 'lucide-react';
 
-type SportFilter = 'all' | 'Football' | 'Basketball' | 'Tennis' | 'Baseball';
+type CategoryFilter = 'For You' | 'News' | 'Sports' | 'Entertainment' | 'Technology' | 'Business';
 
 const HomePage = () => {
-  const [sport, setSport] = useState<SportFilter>('all');
-  const [matches, setMatches] = useState<Match[]>([]);
+  const { user } = useAuth();
+  const [category, setCategory] = useState<CategoryFilter>('For You');
+  const [posts, setPosts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [syncing, setSyncing] = useState(false);
-  const [lastSync, setLastSync] = useState<Date | null>(null);
-  
-  const sports: SportFilter[] = ['all', 'Football', 'Basketball', 'Tennis', 'Baseball'];
 
-  const loadMatches = async () => {
+  const categories: CategoryFilter[] = ['For You', 'News', 'Sports', 'Entertainment', 'Technology', 'Business'];
+
+  useEffect(() => {
+    loadPosts();
+  }, [category]);
+
+  const loadPosts = async () => {
     setLoading(true);
-    const data = await fetchMatches();
-    setMatches(data);
+    const data = await getFeedPosts(50);
+    
+    // Filter by category if not "For You"
+    const filtered = category === 'For You' 
+      ? data 
+      : data.filter((p: any) => p.category === category);
+    
+    setPosts(filtered);
     setLoading(false);
   };
 
-  const handleSync = async () => {
-    setSyncing(true);
-    const result = await syncSportsData();
-    if (result.success) {
-      setLastSync(new Date());
-      await loadMatches();
-    } else {
-      console.error('Sync failed:', result.error);
-      alert('Failed to sync sports data: ' + result.error);
-    }
-    setSyncing(false);
+  const getTimeAgo = (dateString: string) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffInMinutes = Math.floor((now.getTime() - date.getTime()) / (1000 * 60));
+    
+    if (diffInMinutes < 1) return 'Just now';
+    if (diffInMinutes < 60) return `${diffInMinutes}m ago`;
+    
+    const diffInHours = Math.floor(diffInMinutes / 60);
+    if (diffInHours < 24) return `${diffInHours}h ago`;
+    
+    const diffInDays = Math.floor(diffInHours / 24);
+    if (diffInDays === 1) return 'Yesterday';
+    if (diffInDays < 7) return `${diffInDays} days ago`;
+    
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   };
-
-  useEffect(() => {
-    // Initial load and sync
-    const initializeData = async () => {
-      await loadMatches();
-      await handleSync();
-    };
-    
-    initializeData();
-    
-    // Auto-refresh every 60 seconds for live scores
-    const interval = setInterval(() => {
-      loadMatches();
-    }, 60000);
-    
-    return () => clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const getFilteredMatches = (): { live: Match[], upcoming: Match[], finished: Match[] } => {
-    const filterBySport = (matchList: Match[]) => 
-      sport === 'all' ? matchList : matchList.filter(m => m.sport === sport);
-    
-    const live = filterBySport(matches.filter(m => m.status === 'live'));
-    const upcoming = filterBySport(matches.filter(m => m.status === 'upcoming'));
-    const finished = filterBySport(matches.filter(m => m.status === 'finished'));
-    
-    return { live, upcoming, finished };
-  };
-
-  const { live, upcoming, finished } = getFilteredMatches();
 
   return (
-    <div className="max-w-5xl mx-auto">
-      {/* Sport Tabs */}
-      <div className="bg-card border-b border-border sticky top-14 z-40">
-        <div className="flex items-center justify-between">
-          <div className="flex overflow-x-auto flex-1">
-            {sports.map((s) => (
+    <div className="max-w-7xl mx-auto">
+      {/* Category Tabs */}
+      <div className="bg-white border-b border-gray-200 sticky top-14 z-40">
+        <div className="overflow-x-auto">
+          <div className="flex">
+            {categories.map((cat) => (
               <button
-                key={s}
-                onClick={() => setSport(s)}
-                className={`px-6 py-3 text-sm font-semibold whitespace-nowrap transition-colors border-b-2 ${
-                  sport === s
-                    ? 'border-primary text-primary'
-                    : 'border-transparent text-muted-foreground hover:text-foreground'
+                key={cat}
+                onClick={() => setCategory(cat)}
+                className={`px-5 py-3.5 text-sm font-medium whitespace-nowrap transition-all ${
+                  category === cat
+                    ? 'text-primary border-b-2 border-primary'
+                    : 'text-gray-600 hover:text-gray-900'
                 }`}
               >
-                {s === 'all' ? 'All Sports' : s}
+                {cat}
               </button>
             ))}
-          </div>
-          <div className="flex items-center gap-2 px-4">
-            {lastSync && (
-              <span className="text-xs text-muted-foreground">
-                {lastSync.toLocaleTimeString()}
-              </span>
-            )}
-            <button
-              onClick={handleSync}
-              disabled={syncing}
-              className="p-2 text-muted-foreground hover:text-primary transition-colors disabled:opacity-50"
-              title="Sync live scores"
-            >
-              {syncing ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <RefreshCw className="w-4 h-4" />
-              )}
-            </button>
           </div>
         </div>
       </div>
 
-      <div className="bg-card">
+      {/* Posts Grid */}
+      <div className="bg-gray-50 min-h-screen">
         {loading ? (
-          <div className="flex items-center justify-center py-16">
+          <div className="flex items-center justify-center py-20">
             <Loader2 className="w-8 h-8 animate-spin text-primary" />
           </div>
+        ) : posts.length === 0 ? (
+          <div className="text-center py-20 px-4">
+            <div className="max-w-md mx-auto">
+              <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <MessageCircle className="w-10 h-10 text-gray-400" />
+              </div>
+              <h3 className="text-xl font-bold text-gray-900 mb-2">No stories yet</h3>
+              <p className="text-gray-600 mb-6">Be the first to share your story with the community!</p>
+              <Link
+                to="/create"
+                className="inline-block px-6 py-3 bg-primary text-white rounded-full font-medium hover:bg-red-600 transition-colors"
+              >
+                Create Story
+              </Link>
+            </div>
+          </div>
         ) : (
-          <>
-        {/* Live Matches */}
-        {live.length > 0 && (
-          <div className="mb-6">
-            <div className="px-4 py-3 bg-secondary border-b border-border">
-              <h2 className="text-sm font-bold text-foreground uppercase tracking-wide">
-                Live Now ({live.length})
-              </h2>
-            </div>
-            {live.map((match) => (
-              <LiveMatchCard key={match.id} match={match} />
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-4">
+            {posts.map((post) => (
+              <Link
+                key={post.id}
+                to={`/story/${post.id}`}
+                className="bg-white rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-shadow"
+              >
+                {/* Cover Image */}
+                {post.cover_image && (
+                  <div className="relative h-48 bg-gray-200 overflow-hidden">
+                    <img
+                      src={post.cover_image}
+                      alt=""
+                      className="w-full h-full object-cover hover:scale-105 transition-transform duration-300"
+                    />
+                    {/* Category Badge */}
+                    <div className="absolute top-3 left-3">
+                      <span className="px-2.5 py-1 bg-primary text-white text-xs font-bold uppercase rounded">
+                        {post.category}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Content */}
+                <div className="p-4">
+                  {/* Title */}
+                  <h2 className="text-base font-bold text-gray-900 line-clamp-2 mb-2 hover:text-primary transition-colors">
+                    {post.title}
+                  </h2>
+
+                  {/* Excerpt */}
+                  {post.excerpt && (
+                    <p className="text-sm text-gray-600 line-clamp-2 mb-3">
+                      {post.excerpt}
+                    </p>
+                  )}
+
+                  {/* Meta Info */}
+                  <div className="flex items-center justify-between text-xs text-gray-500">
+                    <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-1">
+                        <User className="w-3.5 h-3.5" />
+                        <span className="truncate max-w-[100px]">
+                          {post.user_profiles?.username || 'Anonymous'}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <Clock className="w-3.5 h-3.5" />
+                        <span>{getTimeAgo(post.published_at)}</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-1">
+                        <Eye className="w-3.5 h-3.5" />
+                        <span>{post.views_count || 0}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Engagement Stats */}
+                  <div className="flex items-center gap-4 mt-3 pt-3 border-t border-gray-100">
+                    <div className="flex items-center gap-1 text-xs text-gray-600">
+                      <MessageCircle className="w-4 h-4" />
+                      <span>{post.comments_count || 0}</span>
+                    </div>
+                    <div className="flex items-center gap-1 text-xs text-gray-600">
+                      <Share2 className="w-4 h-4" />
+                      <span>{post.shares_count || 0}</span>
+                    </div>
+                    <div className="ml-auto">
+                      <Bookmark className="w-4 h-4 text-gray-400 hover:text-primary cursor-pointer" />
+                    </div>
+                  </div>
+                </div>
+              </Link>
             ))}
           </div>
-        )}
-
-        {/* Upcoming Matches */}
-        {upcoming.length > 0 && (
-          <div className="mb-6">
-            <div className="px-4 py-3 bg-secondary border-b border-border">
-              <h2 className="text-sm font-bold text-foreground uppercase tracking-wide">
-                Upcoming ({upcoming.length})
-              </h2>
-            </div>
-            {upcoming.map((match) => (
-              <LiveMatchCard key={match.id} match={match} />
-            ))}
-          </div>
-        )}
-
-        {/* Finished Matches */}
-        {finished.length > 0 && (
-          <div className="mb-6">
-            <div className="px-4 py-3 bg-secondary border-b border-border">
-              <h2 className="text-sm font-bold text-foreground uppercase tracking-wide">
-                Finished ({finished.length})
-              </h2>
-            </div>
-            {finished.map((match) => (
-              <LiveMatchCard key={match.id} match={match} />
-            ))}
-          </div>
-        )}
-
-        {/* Empty State */}
-        {live.length === 0 && upcoming.length === 0 && finished.length === 0 && (
-          <div className="text-center py-16 px-4">
-            <p className="text-muted-foreground mb-4">No matches available</p>
-            <button
-              onClick={handleSync}
-              className="px-4 py-2 bg-primary text-primary-foreground rounded hover:bg-primary/90 transition-colors"
-            >
-              Sync Live Scores
-            </button>
-          </div>
-        )}
-          </>
         )}
       </div>
     </div>
