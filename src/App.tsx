@@ -5,6 +5,7 @@ import LoginPage from './pages/LoginPage';
 import ProfilePage from './pages/ProfilePage';
 import EditProfilePage from './pages/EditProfilePage';
 import CreateBlogPage from './pages/CreateBlogPage';
+import CreateVideoPage from './pages/CreateVideoPage';
 import MessagesPage from './pages/MessagesPage';
 import TrendingPage from './pages/TrendingPage';
 import CommunityPage from './pages/CommunityPage';
@@ -37,6 +38,7 @@ function App() {
                         <Route path="/" element={<HomePage />} />
                         <Route path="/story/:id" element={<StoryDetailPage />} />
                         <Route path="/create" element={<CreateBlogPage />} />
+                        <Route path="/upload-video" element={<CreateVideoPage />} />
                         <Route path="/trending" element={<TrendingPage />} />
                         <Route path="/hashtag/:tag" element={<TrendingPage />} />
                         <Route path="/community" element={<CommunityPage />} />

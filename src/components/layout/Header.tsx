@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { Menu, PenSquare, User, LogOut, Search } from 'lucide-react';
+import { Menu, PenSquare, User, LogOut, Search, Video } from 'lucide-react';
 import { useAuth } from '../../stores/authStore';
 import { useState } from 'react';
 
@@ -53,7 +53,16 @@ const Header = ({ onMenuClick }: HeaderProps) => {
               className="hidden sm:flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-full text-sm font-medium hover:bg-red-600 transition-colors"
             >
               <PenSquare className="w-4 h-4" />
-              <span>Create Story</span>
+              <span>Write</span>
+            </Link>
+
+            {/* Upload Video Button */}
+            <Link
+              to="/upload-video"
+              className="hidden sm:flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-full text-sm font-medium hover:bg-blue-700 transition-colors"
+            >
+              <Video className="w-4 h-4" />
+              <span>Video</span>
             </Link>
 
             {/* Mobile Create Button */}
@@ -112,6 +121,14 @@ const Header = ({ onMenuClick }: HeaderProps) => {
                     >
                       <PenSquare className="w-4 h-4" />
                       Create Story
+                    </Link>
+                    <Link
+                      to="/upload-video"
+                      onClick={() => setShowUserMenu(false)}
+                      className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                    >
+                      <Video className="w-4 h-4" />
+                      Upload Video
                     </Link>
                     <button
                       onClick={() => {

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../stores/authStore';
 import { getCommunityPosts, createCommunityPost } from '../lib/api';
-import { Loader2, Image as ImageIcon, Video, Send, Heart, MessageCircle, Share2, User } from 'lucide-react';
+import { Loader2, Image as ImageIcon, Video, Send, Heart, MessageCircle, Share2, User, Facebook, Twitter, Copy, Linkedin, Mail } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 const CommunityPage = () => {
@@ -11,6 +11,7 @@ const CommunityPage = () => {
   const [newPost, setNewPost] = useState('');
   const [mediaFile, setMediaFile] = useState<File | null>(null);
   const [posting, setPosting] = useState(false);
+  const [shareMenuId, setShareMenuId] = useState<string | null>(null);
 
   useEffect(() => {
     loadPosts();
@@ -56,6 +57,46 @@ const CommunityPage = () => {
     if (diffInDays < 7) return `${diffInDays}d ago`;
     
     return date.toLocaleDateString();
+  };
+
+  const handleShare = async (postId: string, content: string, platform?: string) => {
+    const shareUrl = `${window.location.origin}/community/${postId}`;
+    const shareText = content.substring(0, 200) + (content.length > 200 ? '...' : '');
+    
+    if (platform === 'facebook') {
+      window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}`, '_blank');
+    } else if (platform === 'twitter') {
+      window.open(`https://twitter.com/intent/tweet?url=${encodeURIComponent(shareUrl)}&text=${encodeURIComponent(shareText)}`, '_blank');
+    } else if (platform === 'linkedin') {
+      window.open(`https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(shareUrl)}`, '_blank');
+    } else if (platform === 'whatsapp') {
+      window.open(`https://wa.me/?text=${encodeURIComponent(shareText + ' ' + shareUrl)}`, '_blank');
+    } else if (platform === 'email') {
+      window.location.href = `mailto:?subject=${encodeURIComponent('Check out this post')}&body=${encodeURIComponent(shareText + '\n\nView post: ' + shareUrl)}`;
+    } else if (platform === 'copy') {
+      try {
+        await navigator.clipboard.writeText(shareUrl);
+        alert('✅ Link copied to clipboard!');
+      } catch (err) {
+        alert('Failed to copy link');
+      }
+    } else {
+      if (navigator.share) {
+        try {
+          await navigator.share({
+            text: shareText,
+            url: shareUrl,
+          });
+        } catch (err) {
+          console.log('Share cancelled');
+        }
+      } else {
+        setShareMenuId(postId);
+        return;
+      }
+    }
+    
+    setShareMenuId(null);
   };
 
   return (
@@ -186,10 +227,54 @@ const CommunityPage = () => {
                   <MessageCircle className="w-5 h-5" />
                   <span className="text-sm">{post.comments_count || 0}</span>
                 </button>
-                <button className="flex items-center gap-2 text-gray-600 hover:text-green-500 transition-colors">
-                  <Share2 className="w-5 h-5" />
-                  <span className="text-sm">{post.shares_count || 0}</span>
-                </button>
+                <div className="relative">
+                  <button 
+                    onClick={() => handleShare(post.id, post.content)}
+                    className="flex items-center gap-2 text-gray-600 hover:text-green-500 transition-colors"
+                  >
+                    <Share2 className="w-5 h-5" />
+                    <span className="text-sm">{post.shares_count || 0}</span>
+                  </button>
+                  
+                  {shareMenuId === post.id && (
+                    <>
+                      <div 
+                        className="fixed inset-0 z-30" 
+                        onClick={() => setShareMenuId(null)}
+                      />
+                      <div className="absolute bottom-full left-0 mb-2 bg-white rounded-lg shadow-xl border border-gray-200 py-2 z-40 min-w-[180px]">
+                        <button
+                          onClick={() => handleShare(post.id, post.content, 'facebook')}
+                          className="flex items-center gap-3 px-3 py-2 text-sm text-gray-700 hover:bg-blue-50 w-full"
+                        >
+                          <Facebook className="w-4 h-4 text-blue-600" />
+                          Facebook
+                        </button>
+                        <button
+                          onClick={() => handleShare(post.id, post.content, 'twitter')}
+                          className="flex items-center gap-3 px-3 py-2 text-sm text-gray-700 hover:bg-sky-50 w-full"
+                        >
+                          <Twitter className="w-4 h-4 text-sky-500" />
+                          Twitter
+                        </button>
+                        <button
+                          onClick={() => handleShare(post.id, post.content, 'whatsapp')}
+                          className="flex items-center gap-3 px-3 py-2 text-sm text-gray-700 hover:bg-green-50 w-full"
+                        >
+                          <MessageCircle className="w-4 h-4 text-green-600" />
+                          WhatsApp
+                        </button>
+                        <button
+                          onClick={() => handleShare(post.id, post.content, 'copy')}
+                          className="flex items-center gap-3 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 w-full border-t border-gray-100"
+                        >
+                          <Copy className="w-4 h-4 text-gray-600" />
+                          Copy Link
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
               </div>
             </div>
           ))}
