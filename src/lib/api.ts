@@ -301,6 +301,41 @@ export const createBlogPost = async (post: any) => {
   }
 };
 
+export const uploadBlogMedia = async (postId: string, file: File) => {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Not authenticated');
+
+    if (file.size > 10 * 1024 * 1024) {
+      throw new Error('File size exceeds 10MB limit');
+    }
+
+    const fileExt = file.name.split('.').pop();
+    const fileName = `${user.id}/${postId}/${Date.now()}.${fileExt}`;
+    const mediaType = file.type.startsWith('image/') ? 'image' : 'video';
+
+    const { error: uploadError } = await supabase.storage
+      .from('blog-media')
+      .upload(fileName, file);
+
+    if (uploadError) throw uploadError;
+
+    const { data } = supabase.storage.from('blog-media').getPublicUrl(fileName);
+
+    await supabase.from('blog_media').insert({
+      post_id: postId,
+      user_id: user.id,
+      media_type: mediaType,
+      media_url: data.publicUrl,
+      media_size: file.size,
+    });
+
+    return { data: data.publicUrl, error: null };
+  } catch (error: any) {
+    return { data: null, error: error.message };
+  }
+};
+
 // ============================================
 // AI-POWERED CONTENT MODERATION
 // ============================================
