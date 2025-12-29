@@ -282,17 +282,34 @@ const StoryDetailPage = () => {
           </div>
         </div>
 
-        {/* Tags */}
-        {post.tags && post.tags.length > 0 && (
-          <div className="flex flex-wrap gap-2 mb-8">
-            {post.tags.map((tag: string) => (
-              <span
-                key={tag}
-                className="px-3 py-1 bg-gray-100 text-gray-700 text-sm rounded-full"
-              >
-                #{tag}
-              </span>
-            ))}
+        {/* Hashtags & Tags */}
+        {((post.hashtags && post.hashtags.length > 0) || (post.tags && post.tags.length > 0)) && (
+          <div className="mb-8">
+            <h3 className="text-sm font-semibold text-gray-700 mb-3">Topics</h3>
+            <div className="flex flex-wrap gap-2">
+              {/* Display extracted hashtags */}
+              {post.hashtags && post.hashtags.map((hashtag: any) => (
+                <Link
+                  key={hashtag.tag}
+                  to={`/hashtag/${hashtag.tag}`}
+                  className="px-3 py-1.5 bg-primary/10 text-primary text-sm font-medium rounded-full hover:bg-primary/20 transition-colors"
+                >
+                  #{hashtag.tag}
+                  {hashtag.usage_count > 1 && (
+                    <span className="ml-1 text-xs opacity-75">({hashtag.usage_count})</span>
+                  )}
+                </Link>
+              ))}
+              {/* Display manual tags */}
+              {post.tags && post.tags.map((tag: string) => (
+                <span
+                  key={tag}
+                  className="px-3 py-1.5 bg-gray-100 text-gray-700 text-sm rounded-full"
+                >
+                  {tag}
+                </span>
+              ))}
+            </div>
           </div>
         )}
 

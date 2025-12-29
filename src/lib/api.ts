@@ -187,23 +187,40 @@ export const getBlogPostById = async (postId: string) => {
 
     if (error) throw error;
 
+    // Get hashtags for this post
+    const { data: postHashtags } = await supabase
+      .from('blog_post_hashtags')
+      .select('hashtags(tag, usage_count)')
+      .eq('post_id', postId);
+
     // Increment view count
     await supabase.from('blog_posts').update({
       views_count: (data.views_count || 0) + 1
     }).eq('id', postId);
 
-    return { data, error: null };
+    return { 
+      data: {
+        ...data,
+        hashtags: postHashtags?.map((h: any) => h.hashtags) || []
+      }, 
+      error: null 
+    };
   } catch (error: any) {
     return { data: null, error: error.message };
   }
 };
 
 const extractHashtags = (content: string): string[] => {
-  const hashtagRegex = /#(\w+)/g;
+  // Extract hashtags from content (supports letters, numbers, underscores)
+  const hashtagRegex = /#([a-zA-Z0-9_]+)/g;
   const hashtags = [];
   let match;
   while ((match = hashtagRegex.exec(content)) !== null) {
-    hashtags.push(match[1].toLowerCase());
+    const tag = match[1].toLowerCase();
+    // Only include hashtags with at least 2 characters
+    if (tag.length >= 2) {
+      hashtags.push(tag);
+    }
   }
   return [...new Set(hashtags)];
 };
