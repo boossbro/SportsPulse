@@ -26,8 +26,10 @@ const Sidebar = ({ isOpen, onClose }: SidebarProps) => {
   };
 
   const navigationLinks = [
-    { path: '/feed', label: 'Feed', icon: FileText },
-    { path: '/blog', label: 'Blog', icon: FileText },
+    { path: '/', label: 'Home', icon: FileText },
+    { path: '/community', label: 'Community', icon: MessageSquare },
+    { path: '/videos', label: 'Videos', icon: FileText },
+    { path: '/leaderboard', label: 'Leaderboard', icon: Hash },
     { path: '/messages', label: 'Messages', icon: MessageSquare },
     { path: '/trending', label: 'Trending', icon: Hash },
   ];

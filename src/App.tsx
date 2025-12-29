@@ -7,6 +7,9 @@ import EditProfilePage from './pages/EditProfilePage';
 import CreateBlogPage from './pages/CreateBlogPage';
 import MessagesPage from './pages/MessagesPage';
 import TrendingPage from './pages/TrendingPage';
+import CommunityPage from './pages/CommunityPage';
+import VideosPage from './pages/VideosPage';
+import LeaderboardPage from './pages/LeaderboardPage';
 import Header from './components/layout/Header';
 import Sidebar from './components/layout/Sidebar';
 import { AuthProvider } from './components/auth/AuthProvider';
@@ -36,6 +39,9 @@ function App() {
                         <Route path="/create" element={<CreateBlogPage />} />
                         <Route path="/trending" element={<TrendingPage />} />
                         <Route path="/hashtag/:tag" element={<TrendingPage />} />
+                        <Route path="/community" element={<CommunityPage />} />
+                        <Route path="/videos" element={<VideosPage />} />
+                        <Route path="/leaderboard" element={<LeaderboardPage />} />
                         <Route path="/profile/:id" element={<ProfilePage />} />
                         <Route path="/profile/edit" element={<EditProfilePage />} />
                         <Route path="/messages" element={<MessagesPage />} />

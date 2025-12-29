@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { FunctionsHttpError } from '@supabase/supabase-js';
 
 // ============================================
 // USER PROFILE FUNCTIONS
@@ -38,7 +39,6 @@ export const updateUserProfile = async (userId: string, updates: any) => {
 
 export const uploadAvatar = async (userId: string, file: File) => {
   try {
-    // Check file size (max 2MB)
     if (file.size > 2 * 1024 * 1024) {
       throw new Error('File size must be less than 2MB');
     }
@@ -64,7 +64,7 @@ export const uploadAvatar = async (userId: string, file: File) => {
 };
 
 // ============================================
-// FOLLOW SYSTEM FUNCTIONS
+// FOLLOW SYSTEM
 // ============================================
 
 export const followUser = async (followingId: string) => {
@@ -115,7 +115,6 @@ export const checkIsFollowing = async (userId: string) => {
     if (error) throw error;
     return !!data;
   } catch (error: any) {
-    console.error('Error checking follow status:', error);
     return false;
   }
 };
@@ -187,6 +186,12 @@ export const getBlogPostById = async (postId: string) => {
       .single();
 
     if (error) throw error;
+
+    // Increment view count
+    await supabase.from('blog_posts').update({
+      views_count: (data.views_count || 0) + 1
+    }).eq('id', postId);
+
     return { data, error: null };
   } catch (error: any) {
     return { data: null, error: error.message };
@@ -235,6 +240,7 @@ export const createBlogPost = async (post: any) => {
 
     if (error) throw error;
 
+    // Process hashtags
     for (const tag of hashtags) {
       const { data: existingTag } = await supabase
         .from('hashtags')
@@ -268,6 +274,7 @@ export const createBlogPost = async (post: any) => {
       }
     }
 
+    // Process mentions
     for (const mention of mentions) {
       const { data: mentionedUser } = await supabase
         .from('user_profiles')
@@ -283,44 +290,274 @@ export const createBlogPost = async (post: any) => {
       }
     }
 
+    // Call AI moderation if published
+    if (post.published) {
+      await moderateContent(data.id, post.title, post.content, post.category);
+    }
+
     return { data, error: null };
   } catch (error: any) {
     return { data: null, error: error.message };
   }
 };
 
-export const uploadBlogMedia = async (postId: string, file: File) => {
+// ============================================
+// AI-POWERED CONTENT MODERATION
+// ============================================
+
+export const moderateContent = async (
+  postId: string,
+  title: string,
+  content: string,
+  category: string
+) => {
+  try {
+    const { data, error } = await supabase.functions.invoke('moderate-content', {
+      body: { postId, title, content, category },
+    });
+
+    if (error) {
+      let errorMessage = error.message;
+      if (error instanceof FunctionsHttpError) {
+        try {
+          const textContent = await error.context?.text();
+          errorMessage = textContent || error.message;
+        } catch {
+          errorMessage = error.message;
+        }
+      }
+      throw new Error(errorMessage);
+    }
+
+    return { data, error: null };
+  } catch (error: any) {
+    console.error('Content moderation error:', error);
+    return { data: null, error: error.message };
+  }
+};
+
+// ============================================
+// COMMUNITY POSTS (Short-form content)
+// ============================================
+
+export const getCommunityPosts = async (limit = 30) => {
+  try {
+    const { data, error } = await supabase
+      .from('community_posts')
+      .select('*, user_profiles(id, username, avatar_url)')
+      .order('created_at', { ascending: false })
+      .limit(limit);
+
+    if (error) throw error;
+    return data || [];
+  } catch (error: any) {
+    console.error('Error fetching community posts:', error);
+    return [];
+  }
+};
+
+export const createCommunityPost = async (content: string, media?: File) => {
   try {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error('Not authenticated');
 
-    if (file.size > 10 * 1024 * 1024) {
-      throw new Error('File size exceeds 10MB limit');
+    let mediaUrl = null;
+    let mediaType = null;
+
+    if (media) {
+      if (media.size > 10 * 1024 * 1024) {
+        throw new Error('File size exceeds 10MB limit');
+      }
+
+      const fileExt = media.name.split('.').pop();
+      const fileName = `${user.id}/community/${Date.now()}.${fileExt}`;
+      const type = media.type.startsWith('image/') ? 'image' : media.type.startsWith('video/') ? 'video' : 'gif';
+
+      const { error: uploadError } = await supabase.storage
+        .from('blog-media')
+        .upload(fileName, media);
+
+      if (uploadError) throw uploadError;
+
+      const { data: urlData } = supabase.storage.from('blog-media').getPublicUrl(fileName);
+      mediaUrl = urlData.publicUrl;
+      mediaType = type;
     }
 
-    const fileExt = file.name.split('.').pop();
-    const fileName = `${user.id}/${postId}/${Date.now()}.${fileExt}`;
-    const mediaType = file.type.startsWith('image/') ? 'image' : 'video';
-
-    const { error: uploadError } = await supabase.storage
-      .from('blog-media')
-      .upload(fileName, file);
-
-    if (uploadError) throw uploadError;
-
-    const { data } = supabase.storage.from('blog-media').getPublicUrl(fileName);
-
-    await supabase.from('blog_media').insert({
-      post_id: postId,
+    const { data, error } = await supabase.from('community_posts').insert({
       user_id: user.id,
+      content,
+      media_url: mediaUrl,
       media_type: mediaType,
-      media_url: data.publicUrl,
-      media_size: file.size,
-    });
+    }).select('*, user_profiles(id, username, avatar_url)').single();
 
-    return { data: data.publicUrl, error: null };
+    if (error) throw error;
+    return { data, error: null };
   } catch (error: any) {
     return { data: null, error: error.message };
+  }
+};
+
+// ============================================
+// VIDEO STORIES (TikTok-style)
+// ============================================
+
+export const getVideoStories = async (category?: string, limit = 20) => {
+  try {
+    let query = supabase
+      .from('video_stories')
+      .select('*, user_profiles(id, username, avatar_url)');
+
+    if (category) {
+      query = query.eq('category', category);
+    }
+
+    const { data, error } = await query
+      .order('created_at', { ascending: false })
+      .limit(limit);
+
+    if (error) throw error;
+    return data || [];
+  } catch (error: any) {
+    console.error('Error fetching video stories:', error);
+    return [];
+  }
+};
+
+export const uploadVideoStory = async (
+  title: string,
+  description: string,
+  category: string,
+  videoFile: File,
+  thumbnailFile?: File
+) => {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Not authenticated');
+
+    if (videoFile.size > 100 * 1024 * 1024) { // 100MB limit for videos
+      throw new Error('Video size exceeds 100MB limit');
+    }
+
+    // Upload video
+    const videoExt = videoFile.name.split('.').pop();
+    const videoFileName = `${user.id}/videos/${Date.now()}.${videoExt}`;
+
+    const { error: videoUploadError } = await supabase.storage
+      .from('blog-media')
+      .upload(videoFileName, videoFile);
+
+    if (videoUploadError) throw videoUploadError;
+
+    const { data: videoUrlData } = supabase.storage.from('blog-media').getPublicUrl(videoFileName);
+
+    // Upload thumbnail if provided
+    let thumbnailUrl = null;
+    if (thumbnailFile) {
+      const thumbExt = thumbnailFile.name.split('.').pop();
+      const thumbFileName = `${user.id}/thumbnails/${Date.now()}.${thumbExt}`;
+
+      const { error: thumbUploadError } = await supabase.storage
+        .from('blog-media')
+        .upload(thumbFileName, thumbnailFile);
+
+      if (!thumbUploadError) {
+        const { data: thumbUrlData } = supabase.storage.from('blog-media').getPublicUrl(thumbFileName);
+        thumbnailUrl = thumbUrlData.publicUrl;
+      }
+    }
+
+    const { data, error } = await supabase.from('video_stories').insert({
+      user_id: user.id,
+      title,
+      description,
+      video_url: videoUrlData.publicUrl,
+      thumbnail_url: thumbnailUrl,
+      category,
+      duration: 0, // Would need to extract from video metadata
+    }).select('*, user_profiles(id, username, avatar_url)').single();
+
+    if (error) throw error;
+    return { data, error: null };
+  } catch (error: any) {
+    return { data: null, error: error.message };
+  }
+};
+
+// ============================================
+// TRENDING & RANKINGS
+// ============================================
+
+export const getTrendingContent = async (contentType?: string, limit = 20) => {
+  try {
+    let query = supabase.from('trending_content').select('*');
+
+    if (contentType) {
+      query = query.eq('content_type', contentType);
+    }
+
+    const { data, error } = await query
+      .order('trending_score', { ascending: false })
+      .limit(limit);
+
+    if (error) throw error;
+    return data || [];
+  } catch (error: any) {
+    console.error('Error fetching trending content:', error);
+    return [];
+  }
+};
+
+export const getWriterRankings = async (limit = 50) => {
+  try {
+    const { data, error } = await supabase
+      .from('writer_rankings')
+      .select('*, user_profiles(id, username, avatar_url)')
+      .order('rank', { ascending: true })
+      .limit(limit);
+
+    if (error) throw error;
+    return data || [];
+  } catch (error: any) {
+    console.error('Error fetching writer rankings:', error);
+    return [];
+  }
+};
+
+export const getUserRewards = async (userId: string) => {
+  try {
+    const { data, error } = await supabase
+      .from('user_rewards')
+      .select('*')
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (error) throw error;
+    return data || {
+      total_points: 0,
+      total_earnings: 0,
+      level: 1,
+      badges: [],
+    };
+  } catch (error: any) {
+    console.error('Error fetching user rewards:', error);
+    return null;
+  }
+};
+
+export const getContentEarnings = async (userId: string) => {
+  try {
+    const { data, error } = await supabase
+      .from('content_earnings')
+      .select('*')
+      .eq('user_id', userId)
+      .order('earnings_amount', { ascending: false });
+
+    if (error) throw error;
+    return data || [];
+  } catch (error: any) {
+    console.error('Error fetching content earnings:', error);
+    return [];
   }
 };
 
@@ -455,7 +692,7 @@ export const incrementShares = async (postId: string) => {
 };
 
 // ============================================
-// BLOG POST COMMENTS
+// COMMENTS
 // ============================================
 
 export const getBlogComments = async (postId: string) => {
@@ -553,7 +790,7 @@ export const getPostsByHashtag = async (hashtag: string, limit = 20) => {
 };
 
 // ============================================
-// MESSAGES FUNCTIONS
+// MESSAGES
 // ============================================
 
 export const getConversations = async () => {
@@ -640,7 +877,7 @@ export const sendMessage = async (recipientId: string, content: string) => {
 };
 
 // ============================================
-// ANALYTICS FUNCTIONS
+// ANALYTICS
 // ============================================
 
 export const getUserAnalytics = async (userId: string) => {

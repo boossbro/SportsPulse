@@ -4,7 +4,7 @@ import { useAuth } from '../stores/authStore';
 import { createBlogPost, uploadBlogMedia } from '../lib/api';
 import { Loader2, Save, Upload, X, Image as ImageIcon, Video } from 'lucide-react';
 
-const categories = ['Football', 'Basketball', 'Tennis', 'Baseball', 'General'];
+const categories = ['News', 'Sports', 'Entertainment', 'Technology', 'Business', 'Health', 'Lifestyle', 'Politics'];
 
 const CreateBlogPage = () => {
   const navigate = useNavigate();
@@ -16,10 +16,11 @@ const CreateBlogPage = () => {
     content: '',
     excerpt: '',
     cover_image: '',
-    category: 'General',
+    category: 'News',
     tags: [] as string[],
     published: false,
   });
+  const [moderationResult, setModerationResult] = useState<any>(null);
   const [tagInput, setTagInput] = useState('');
   const [mediaFiles, setMediaFiles] = useState<File[]>([]);
 
@@ -86,7 +87,19 @@ const CreateBlogPage = () => {
       alert('Failed to create post: ' + result.error);
       setSaving(false);
     } else if (result.data) {
-      navigate(`/blog/${result.data.id}`);
+      // Show moderation result if available
+      if (result.data.moderation) {
+        setModerationResult(result.data.moderation);
+      }
+      
+      if (published) {
+        // Show AI feedback before redirecting
+        setTimeout(() => {
+          navigate(`/story/${result.data.id}`);
+        }, moderationResult ? 2000 : 0);
+      } else {
+        navigate(`/story/${result.data.id}`);
+      }
     }
   };
 
