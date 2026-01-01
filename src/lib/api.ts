@@ -519,6 +519,9 @@ export const uploadVideoStory = async (
       }
     }
 
+    // Extract hashtags from title and description
+    const hashtags = extractHashtags(title + ' ' + description);
+
     const { data, error } = await supabase.from('video_stories').insert({
       user_id: user.id,
       title,
@@ -526,13 +529,259 @@ export const uploadVideoStory = async (
       video_url: videoUrlData.publicUrl,
       thumbnail_url: thumbnailUrl,
       category,
-      duration: 0, // Would need to extract from video metadata
+      duration: 0,
     }).select('*, user_profiles(id, username, avatar_url)').single();
 
     if (error) throw error;
+
+    // Process hashtags for videos
+    for (const tag of hashtags) {
+      const { data: existingTag } = await supabase
+        .from('hashtags')
+        .select('id, usage_count')
+        .eq('tag', tag)
+        .maybeSingle();
+
+      if (existingTag) {
+        await supabase
+          .from('hashtags')
+          .update({ usage_count: existingTag.usage_count + 1, updated_at: new Date().toISOString() })
+          .eq('id', existingTag.id);
+        
+        await supabase.from('video_hashtags').insert({
+          video_id: data.id,
+          hashtag_id: existingTag.id,
+        });
+      } else {
+        const { data: newTag } = await supabase
+          .from('hashtags')
+          .insert({ tag, usage_count: 1 })
+          .select()
+          .single();
+        
+        if (newTag) {
+          await supabase.from('video_hashtags').insert({
+            video_id: data.id,
+            hashtag_id: newTag.id,
+          });
+        }
+      }
+    }
+
+    // Update trending
+    await supabase.from('trending_content').upsert({
+      content_type: 'video',
+      content_id: data.id,
+      trending_score: 50,
+      velocity_score: 100,
+    });
+
     return { data, error: null };
   } catch (error: any) {
     return { data: null, error: error.message };
+  }
+};
+
+// ============================================
+// VIDEO INTERACTIONS
+// ============================================
+
+export const likeVideo = async (videoId: string) => {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Not authenticated');
+
+    const { error } = await supabase.from('video_likes').insert({
+      video_id: videoId,
+      user_id: user.id,
+    });
+
+    if (error) throw error;
+    return { success: true, error: null };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+};
+
+export const unlikeVideo = async (videoId: string) => {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Not authenticated');
+
+    const { error } = await supabase.from('video_likes').delete()
+      .eq('video_id', videoId)
+      .eq('user_id', user.id);
+
+    if (error) throw error;
+    return { success: true, error: null };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+};
+
+export const checkIsVideoLiked = async (videoId: string) => {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return false;
+
+    const { data, error } = await supabase
+      .from('video_likes')
+      .select('id')
+      .eq('video_id', videoId)
+      .eq('user_id', user.id)
+      .maybeSingle();
+
+    if (error) throw error;
+    return !!data;
+  } catch (error: any) {
+    return false;
+  }
+};
+
+export const repostVideo = async (videoId: string) => {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Not authenticated');
+
+    const { error } = await supabase.from('video_reposts').insert({
+      video_id: videoId,
+      user_id: user.id,
+    });
+
+    if (error) throw error;
+    return { success: true, error: null };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+};
+
+export const unrepostVideo = async (videoId: string) => {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Not authenticated');
+
+    const { error } = await supabase.from('video_reposts').delete()
+      .eq('video_id', videoId)
+      .eq('user_id', user.id);
+
+    if (error) throw error;
+    return { success: true, error: null };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+};
+
+export const checkIsVideoReposted = async (videoId: string) => {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return false;
+
+    const { data, error } = await supabase
+      .from('video_reposts')
+      .select('id')
+      .eq('video_id', videoId)
+      .eq('user_id', user.id)
+      .maybeSingle();
+
+    if (error) throw error;
+    return !!data;
+  } catch (error: any) {
+    return false;
+  }
+};
+
+export const incrementVideoShares = async (videoId: string) => {
+  try {
+    const { data, error } = await supabase
+      .from('video_stories')
+      .select('shares_count')
+      .eq('id', videoId)
+      .single();
+
+    if (error) throw error;
+
+    const { error: updateError } = await supabase
+      .from('video_stories')
+      .update({ shares_count: (data.shares_count || 0) + 1 })
+      .eq('id', videoId);
+
+    if (updateError) throw updateError;
+    return { success: true, error: null };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+};
+
+export const incrementVideoViews = async (videoId: string) => {
+  try {
+    const { data, error } = await supabase
+      .from('video_stories')
+      .select('views_count')
+      .eq('id', videoId)
+      .single();
+
+    if (error) throw error;
+
+    const newViewCount = (data.views_count || 0) + 1;
+
+    await supabase
+      .from('video_stories')
+      .update({ views_count: newViewCount })
+      .eq('id', videoId);
+
+    // Update trending score based on views
+    const trendingScore = newViewCount * 0.5;
+    await supabase.from('trending_content').upsert({
+      content_type: 'video',
+      content_id: videoId,
+      trending_score: trendingScore,
+      velocity_score: trendingScore,
+    });
+
+    return { success: true, error: null };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+};
+
+export const getTrendingVideos = async (limit = 20) => {
+  try {
+    const { data, error } = await supabase
+      .from('video_stories')
+      .select('*, user_profiles(id, username, avatar_url)')
+      .order('views_count', { ascending: false })
+      .order('likes_count', { ascending: false })
+      .limit(limit);
+
+    if (error) throw error;
+    return data || [];
+  } catch (error: any) {
+    console.error('Error fetching trending videos:', error);
+    return [];
+  }
+};
+
+export const getVideosByHashtag = async (hashtag: string, limit = 20) => {
+  try {
+    const { data: hashtagData } = await supabase
+      .from('hashtags')
+      .select('id')
+      .eq('tag', hashtag.toLowerCase())
+      .maybeSingle();
+
+    if (!hashtagData) return [];
+
+    const { data, error } = await supabase
+      .from('video_hashtags')
+      .select('video_id, video_stories(*, user_profiles(id, username, avatar_url))')
+      .eq('hashtag_id', hashtagData.id)
+      .limit(limit);
+
+    if (error) throw error;
+    return data?.map((item: any) => item.video_stories) || [];
+  } catch (error: any) {
+    console.error('Error fetching videos by hashtag:', error);
+    return [];
   }
 };
 
@@ -837,6 +1086,43 @@ export const getPostsByHashtag = async (hashtag: string, limit = 20) => {
     return data?.map((item: any) => item.blog_posts) || [];
   } catch (error: any) {
     console.error('Error fetching posts by hashtag:', error);
+    return [];
+  }
+};
+
+export const getAllContentByCategory = async (category: string, limit = 50) => {
+  try {
+    let postsQuery = supabase
+      .from('blog_posts')
+      .select('*, user_profiles(id, username, avatar_url)')
+      .eq('published', true);
+      
+    let videosQuery = supabase
+      .from('video_stories')
+      .select('*, user_profiles(id, username, avatar_url)');
+
+    if (category) {
+      postsQuery = postsQuery.eq('category', category);
+      videosQuery = videosQuery.eq('category', category);
+    }
+
+    const [posts, videos] = await Promise.all([
+      postsQuery.order('published_at', { ascending: false }).limit(limit),
+      videosQuery.order('created_at', { ascending: false }).limit(limit),
+    ]);
+
+    const allContent = [
+      ...(posts.data || []).map((p: any) => ({ ...p, type: 'blog' })),
+      ...(videos.data || []).map((v: any) => ({ ...v, type: 'video' })),
+    ].sort((a, b) => {
+      const dateA = new Date(a.published_at || a.created_at).getTime();
+      const dateB = new Date(b.published_at || b.created_at).getTime();
+      return dateB - dateA;
+    });
+
+    return allContent;
+  } catch (error: any) {
+    console.error('Error fetching content by category:', error);
     return [];
   }
 };
