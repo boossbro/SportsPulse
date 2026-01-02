@@ -2,6 +2,21 @@ import { supabase } from './supabase';
 import { FunctionsHttpError } from '@supabase/supabase-js';
 
 // ============================================
+// PAGINATION & LAZY LOADING
+// ============================================
+
+export interface PaginationParams {
+  page: number;
+  limit: number;
+}
+
+export interface PaginatedResponse<T> {
+  data: T[];
+  hasMore: boolean;
+  total?: number;
+}
+
+// ============================================
 // USER PROFILE FUNCTIONS
 // ============================================
 
@@ -64,6 +79,113 @@ export const uploadAvatar = async (userId: string, file: File) => {
 };
 
 // ============================================
+// SEARCH FUNCTIONS
+// ============================================
+
+export const searchUsers = async (query: string, limit = 20) => {
+  try {
+    const { data, error } = await supabase
+      .from('user_profiles')
+      .select('id, username, email, avatar_url, bio')
+      .or(`username.ilike.%${query}%,email.ilike.%${query}%,bio.ilike.%${query}%`)
+      .limit(limit);
+
+    if (error) throw error;
+    return data || [];
+  } catch (error: any) {
+    console.error('Error searching users:', error);
+    return [];
+  }
+};
+
+export const searchHashtags = async (query: string, limit = 20) => {
+  try {
+    const { data, error } = await supabase
+      .from('hashtags')
+      .select('*')
+      .ilike('tag', `%${query}%`)
+      .order('usage_count', { ascending: false })
+      .limit(limit);
+
+    if (error) throw error;
+    return data || [];
+  } catch (error: any) {
+    console.error('Error searching hashtags:', error);
+    return [];
+  }
+};
+
+export const searchBlogPosts = async (query: string, limit = 20) => {
+  try {
+    const { data, error } = await supabase
+      .from('blog_posts')
+      .select('*, user_profiles(id, username, avatar_url)')
+      .eq('published', true)
+      .or(`title.ilike.%${query}%,content.ilike.%${query}%,excerpt.ilike.%${query}%`)
+      .order('published_at', { ascending: false })
+      .limit(limit);
+
+    if (error) throw error;
+    return data || [];
+  } catch (error: any) {
+    console.error('Error searching blog posts:', error);
+    return [];
+  }
+};
+
+export const searchCommunityPosts = async (query: string, limit = 20) => {
+  try {
+    const { data, error } = await supabase
+      .from('community_posts')
+      .select('*, user_profiles(id, username, avatar_url)')
+      .ilike('content', `%${query}%`)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+
+    if (error) throw error;
+    return data || [];
+  } catch (error: any) {
+    console.error('Error searching community posts:', error);
+    return [];
+  }
+};
+
+export const searchVideos = async (query: string, limit = 20) => {
+  try {
+    const { data, error } = await supabase
+      .from('video_stories')
+      .select('*, user_profiles(id, username, avatar_url)')
+      .or(`title.ilike.%${query}%,description.ilike.%${query}%`)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+
+    if (error) throw error;
+    return data || [];
+  } catch (error: any) {
+    console.error('Error searching videos:', error);
+    return [];
+  }
+};
+
+export const globalSearch = async (query: string) => {
+  const [users, hashtags, blogPosts, communityPosts, videos] = await Promise.all([
+    searchUsers(query, 5),
+    searchHashtags(query, 5),
+    searchBlogPosts(query, 10),
+    searchCommunityPosts(query, 10),
+    searchVideos(query, 5),
+  ]);
+
+  return {
+    users,
+    hashtags,
+    blogPosts,
+    communityPosts,
+    videos,
+  };
+};
+
+// ============================================
 // FOLLOW SYSTEM
 // ============================================
 
@@ -120,60 +242,91 @@ export const checkIsFollowing = async (userId: string) => {
 };
 
 // ============================================
-// BLOG POSTS FUNCTIONS
+// BLOG POSTS FUNCTIONS WITH PAGINATION
 // ============================================
 
-export const getUserBlogPosts = async (userId: string) => {
+export const getUserBlogPosts = async (userId: string, params?: PaginationParams) => {
   try {
-    const { data, error } = await supabase
+    const page = params?.page || 1;
+    const limit = params?.limit || 20;
+    const from = (page - 1) * limit;
+    const to = from + limit - 1;
+
+    const { data, error, count } = await supabase
       .from('blog_posts')
-      .select('*, user_profiles(id, username, avatar_url)')
+      .select('*, user_profiles(id, username, avatar_url)', { count: 'exact' })
       .eq('user_id', userId)
       .eq('published', true)
-      .order('published_at', { ascending: false });
+      .order('published_at', { ascending: false })
+      .range(from, to);
 
     if (error) throw error;
-    return data || [];
+    
+    return {
+      data: data || [],
+      hasMore: (data?.length || 0) === limit,
+      total: count || 0,
+    };
   } catch (error: any) {
     console.error('Error fetching blog posts:', error);
-    return [];
+    return { data: [], hasMore: false, total: 0 };
   }
 };
 
-export const getAllBlogPosts = async (limit = 50) => {
+export const getAllBlogPosts = async (params?: PaginationParams) => {
   try {
-    const { data, error } = await supabase
+    const page = params?.page || 1;
+    const limit = params?.limit || 20;
+    const from = (page - 1) * limit;
+    const to = from + limit - 1;
+
+    const { data, error, count } = await supabase
       .from('blog_posts')
-      .select('*, user_profiles(id, username, avatar_url)')
+      .select('*, user_profiles(id, username, avatar_url)', { count: 'exact' })
       .eq('published', true)
       .order('published_at', { ascending: false })
-      .limit(limit);
+      .range(from, to);
 
     if (error) throw error;
-    return data || [];
+    
+    return {
+      data: data || [],
+      hasMore: (data?.length || 0) === limit,
+      total: count || 0,
+    };
   } catch (error: any) {
     console.error('Error fetching blog posts:', error);
-    return [];
+    return { data: [], hasMore: false, total: 0 };
   }
 };
 
-export const getFeedPosts = async (limit = 30) => {
+export const getFeedPosts = async (params?: PaginationParams) => {
   try {
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return [];
+    if (!user) return { data: [], hasMore: false, total: 0 };
 
-    const { data, error } = await supabase
+    const page = params?.page || 1;
+    const limit = params?.limit || 20;
+    const from = (page - 1) * limit;
+    const to = from + limit - 1;
+
+    const { data, error, count } = await supabase
       .from('blog_posts')
-      .select('*, user_profiles(id, username, avatar_url)')
+      .select('*, user_profiles(id, username, avatar_url)', { count: 'exact' })
       .eq('published', true)
       .order('published_at', { ascending: false })
-      .limit(limit);
+      .range(from, to);
 
     if (error) throw error;
-    return data || [];
+    
+    return {
+      data: data || [],
+      hasMore: (data?.length || 0) === limit,
+      total: count || 0,
+    };
   } catch (error: any) {
     console.error('Error fetching feed posts:', error);
-    return [];
+    return { data: [], hasMore: false, total: 0 };
   }
 };
 
@@ -389,39 +542,59 @@ export const moderateContent = async (
 };
 
 // ============================================
-// COMMUNITY POSTS (Short-form content)
+// COMMUNITY POSTS WITH PAGINATION
 // ============================================
 
-export const getCommunityPosts = async (limit = 30) => {
+export const getCommunityPosts = async (params?: PaginationParams) => {
   try {
-    const { data, error } = await supabase
+    const page = params?.page || 1;
+    const limit = params?.limit || 20;
+    const from = (page - 1) * limit;
+    const to = from + limit - 1;
+
+    const { data, error, count } = await supabase
       .from('community_posts')
-      .select('*, user_profiles(id, username, avatar_url)')
+      .select('*, user_profiles(id, username, avatar_url)', { count: 'exact' })
       .order('created_at', { ascending: false })
-      .limit(limit);
+      .range(from, to);
 
     if (error) throw error;
-    return data || [];
+    
+    return {
+      data: data || [],
+      hasMore: (data?.length || 0) === limit,
+      total: count || 0,
+    };
   } catch (error: any) {
     console.error('Error fetching community posts:', error);
-    return [];
+    return { data: [], hasMore: false, total: 0 };
   }
 };
 
-export const getUserCommunityPosts = async (userId: string, limit = 50) => {
+export const getUserCommunityPosts = async (userId: string, params?: PaginationParams) => {
   try {
-    const { data, error } = await supabase
+    const page = params?.page || 1;
+    const limit = params?.limit || 20;
+    const from = (page - 1) * limit;
+    const to = from + limit - 1;
+
+    const { data, error, count } = await supabase
       .from('community_posts')
-      .select('*, user_profiles(id, username, avatar_url)')
+      .select('*, user_profiles(id, username, avatar_url)', { count: 'exact' })
       .eq('user_id', userId)
       .order('created_at', { ascending: false })
-      .limit(limit);
+      .range(from, to);
 
     if (error) throw error;
-    return data || [];
+    
+    return {
+      data: data || [],
+      hasMore: (data?.length || 0) === limit,
+      total: count || 0,
+    };
   } catch (error: any) {
     console.error('Error fetching user community posts:', error);
-    return [];
+    return { data: [], hasMore: false, total: 0 };
   }
 };
 
@@ -609,28 +782,38 @@ export const addCommunityComment = async (postId: string, content: string) => {
 };
 
 // ============================================
-// VIDEO STORIES (TikTok-style)
+// VIDEO STORIES WITH PAGINATION
 // ============================================
 
-export const getVideoStories = async (category?: string, limit = 20) => {
+export const getVideoStories = async (category?: string, params?: PaginationParams) => {
   try {
+    const page = params?.page || 1;
+    const limit = params?.limit || 20;
+    const from = (page - 1) * limit;
+    const to = from + limit - 1;
+
     let query = supabase
       .from('video_stories')
-      .select('*, user_profiles(id, username, avatar_url)');
+      .select('*, user_profiles(id, username, avatar_url)', { count: 'exact' });
 
     if (category) {
       query = query.eq('category', category);
     }
 
-    const { data, error } = await query
+    const { data, error, count } = await query
       .order('created_at', { ascending: false })
-      .limit(limit);
+      .range(from, to);
 
     if (error) throw error;
-    return data || [];
+    
+    return {
+      data: data || [],
+      hasMore: (data?.length || 0) === limit,
+      total: count || 0,
+    };
   } catch (error: any) {
     console.error('Error fetching video stories:', error);
-    return [];
+    return { data: [], hasMore: false, total: 0 };
   }
 };
 
@@ -937,24 +1120,34 @@ export const incrementVideoViews = async (videoId: string) => {
   }
 };
 
-export const getTrendingVideos = async (limit = 20) => {
+export const getTrendingVideos = async (params?: PaginationParams) => {
   try {
-    const { data, error } = await supabase
+    const page = params?.page || 1;
+    const limit = params?.limit || 20;
+    const from = (page - 1) * limit;
+    const to = from + limit - 1;
+
+    const { data, error, count } = await supabase
       .from('video_stories')
-      .select('*, user_profiles(id, username, avatar_url)')
+      .select('*, user_profiles(id, username, avatar_url)', { count: 'exact' })
       .order('views_count', { ascending: false })
       .order('likes_count', { ascending: false })
-      .limit(limit);
+      .range(from, to);
 
     if (error) throw error;
-    return data || [];
+    
+    return {
+      data: data || [],
+      hasMore: (data?.length || 0) === limit,
+      total: count || 0,
+    };
   } catch (error: any) {
     console.error('Error fetching trending videos:', error);
-    return [];
+    return { data: [], hasMore: false, total: 0 };
   }
 };
 
-export const getVideosByHashtag = async (hashtag: string, limit = 20) => {
+export const getVideosByHashtag = async (hashtag: string, params?: PaginationParams) => {
   try {
     const { data: hashtagData } = await supabase
       .from('hashtags')
@@ -962,19 +1155,29 @@ export const getVideosByHashtag = async (hashtag: string, limit = 20) => {
       .eq('tag', hashtag.toLowerCase())
       .maybeSingle();
 
-    if (!hashtagData) return [];
+    if (!hashtagData) return { data: [], hasMore: false, total: 0 };
 
-    const { data, error } = await supabase
+    const page = params?.page || 1;
+    const limit = params?.limit || 20;
+    const from = (page - 1) * limit;
+    const to = from + limit - 1;
+
+    const { data, error, count } = await supabase
       .from('video_hashtags')
-      .select('video_id, video_stories(*, user_profiles(id, username, avatar_url))')
+      .select('video_id, video_stories(*, user_profiles(id, username, avatar_url))', { count: 'exact' })
       .eq('hashtag_id', hashtagData.id)
-      .limit(limit);
+      .range(from, to);
 
     if (error) throw error;
-    return data?.map((item: any) => item.video_stories) || [];
+    
+    return {
+      data: data?.map((item: any) => item.video_stories) || [],
+      hasMore: (data?.length || 0) === limit,
+      total: count || 0,
+    };
   } catch (error: any) {
     console.error('Error fetching videos by hashtag:', error);
-    return [];
+    return { data: [], hasMore: false, total: 0 };
   }
 };
 
@@ -1240,7 +1443,7 @@ export const deleteBlogComment = async (commentId: string) => {
 };
 
 // ============================================
-// HASHTAGS
+// HASHTAGS WITH PAGINATION
 // ============================================
 
 export const getTrendingHashtags = async (limit = 10) => {
@@ -1259,7 +1462,7 @@ export const getTrendingHashtags = async (limit = 10) => {
   }
 };
 
-export const getPostsByHashtag = async (hashtag: string, limit = 20) => {
+export const getPostsByHashtag = async (hashtag: string, params?: PaginationParams) => {
   try {
     const { data: hashtagData } = await supabase
       .from('hashtags')
@@ -1267,41 +1470,69 @@ export const getPostsByHashtag = async (hashtag: string, limit = 20) => {
       .eq('tag', hashtag.toLowerCase())
       .maybeSingle();
 
-    if (!hashtagData) return [];
+    if (!hashtagData) return { data: [], hasMore: false, total: 0 };
 
-    const { data, error } = await supabase
+    const page = params?.page || 1;
+    const limit = params?.limit || 20;
+    const from = (page - 1) * limit;
+    const to = from + limit - 1;
+
+    const { data, error, count } = await supabase
       .from('blog_post_hashtags')
-      .select('post_id, blog_posts(*, user_profiles(id, username, avatar_url))')
+      .select('post_id, blog_posts(*, user_profiles(id, username, avatar_url))', { count: 'exact' })
       .eq('hashtag_id', hashtagData.id)
-      .limit(limit);
+      .range(from, to);
 
     if (error) throw error;
-    return data?.map((item: any) => item.blog_posts) || [];
+    
+    return {
+      data: data?.map((item: any) => item.blog_posts) || [],
+      hasMore: (data?.length || 0) === limit,
+      total: count || 0,
+    };
   } catch (error: any) {
     console.error('Error fetching posts by hashtag:', error);
-    return [];
+    return { data: [], hasMore: false, total: 0 };
   }
 };
 
-export const getAllContentByCategory = async (category: string, limit = 50) => {
+export const getAllContentByCategory = async (category: string, params?: PaginationParams) => {
   try {
-    let postsQuery = supabase
-      .from('blog_posts')
-      .select('*, user_profiles(id, username, avatar_url)')
-      .eq('published', true);
-      
-    let videosQuery = supabase
-      .from('video_stories')
-      .select('*, user_profiles(id, username, avatar_url)');
-
-    if (category) {
-      postsQuery = postsQuery.eq('category', category);
-      videosQuery = videosQuery.eq('category', category);
-    }
+    const page = params?.page || 1;
+    const limit = params?.limit || 50;
 
     const [posts, videos] = await Promise.all([
-      postsQuery.order('published_at', { ascending: false }).limit(limit),
-      videosQuery.order('created_at', { ascending: false }).limit(limit),
+      getAllBlogPosts({ page, limit: Math.floor(limit / 2) }),
+      getVideoStories(category, { page, limit: Math.floor(limit / 2) }),
+    ]);
+
+    const allContent = [
+      ...(posts.data || []).map((p: any) => ({ ...p, type: 'blog' })),
+      ...(videos.data || []).map((v: any) => ({ ...v, type: 'video' })),
+    ]
+      .filter((item) => !category || item.category === category)
+      .sort((a, b) => {
+        const dateA = new Date(a.published_at || a.created_at).getTime();
+        const dateB = new Date(b.published_at || b.created_at).getTime();
+        return dateB - dateA;
+      });
+
+    return {
+      data: allContent,
+      hasMore: posts.hasMore || videos.hasMore,
+      total: (posts.total || 0) + (videos.total || 0),
+    };
+  } catch (error: any) {
+    console.error('Error fetching content by category:', error);
+    return { data: [], hasMore: false, total: 0 };
+  }
+};
+
+export const getAllContentByHashtag = async (hashtag: string, params?: PaginationParams) => {
+  try {
+    const [posts, videos] = await Promise.all([
+      getPostsByHashtag(hashtag, params),
+      getVideosByHashtag(hashtag, params),
     ]);
 
     const allContent = [
@@ -1313,10 +1544,14 @@ export const getAllContentByCategory = async (category: string, limit = 50) => {
       return dateB - dateA;
     });
 
-    return allContent;
+    return {
+      data: allContent,
+      hasMore: posts.hasMore || videos.hasMore,
+      total: (posts.total || 0) + (videos.total || 0),
+    };
   } catch (error: any) {
-    console.error('Error fetching content by category:', error);
-    return [];
+    console.error('Error fetching content by hashtag:', error);
+    return { data: [], hasMore: false, total: 0 };
   }
 };
 

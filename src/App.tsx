@@ -8,6 +8,9 @@ import CreateBlogPage from './pages/CreateBlogPage';
 import CreateVideoPage from './pages/CreateVideoPage';
 import MessagesPage from './pages/MessagesPage';
 import TrendingPage from './pages/TrendingPage';
+import HashtagPage from './pages/HashtagPage';
+import SearchPage from './pages/SearchPage';
+import NotificationsPage from './pages/NotificationsPage';
 import CommunityPage from './pages/CommunityPage';
 import VideosPage from './pages/VideosPage';
 import LeaderboardPage from './pages/LeaderboardPage';
@@ -41,7 +44,9 @@ function App() {
                         <Route path="/create" element={<CreateBlogPage />} />
                         <Route path="/upload-video" element={<CreateVideoPage />} />
                         <Route path="/trending" element={<TrendingPage />} />
-                        <Route path="/hashtag/:tag" element={<TrendingPage />} />
+                        <Route path="/hashtag/:tag" element={<HashtagPage />} />
+                        <Route path="/search" element={<SearchPage />} />
+                        <Route path="/notifications" element={<NotificationsPage />} />
                         <Route path="/community" element={<CommunityPage />} />
                         <Route path="/videos" element={<VideosPage />} />
                         <Route path="/leaderboard" element={<LeaderboardPage />} />
