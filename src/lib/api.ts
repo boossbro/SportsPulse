@@ -408,6 +408,23 @@ export const getCommunityPosts = async (limit = 30) => {
   }
 };
 
+export const getUserCommunityPosts = async (userId: string, limit = 50) => {
+  try {
+    const { data, error } = await supabase
+      .from('community_posts')
+      .select('*, user_profiles(id, username, avatar_url)')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+
+    if (error) throw error;
+    return data || [];
+  } catch (error: any) {
+    console.error('Error fetching user community posts:', error);
+    return [];
+  }
+};
+
 export const createCommunityPost = async (content: string, media?: File) => {
   try {
     const { data: { user } } = await supabase.auth.getUser();
@@ -441,6 +458,147 @@ export const createCommunityPost = async (content: string, media?: File) => {
       content,
       media_url: mediaUrl,
       media_type: mediaType,
+    }).select('*, user_profiles(id, username, avatar_url)').single();
+
+    if (error) throw error;
+    return { data, error: null };
+  } catch (error: any) {
+    return { data: null, error: error.message };
+  }
+};
+
+// Community Post Likes
+export const likeCommunityPost = async (postId: string) => {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Not authenticated');
+
+    const { error } = await supabase.from('community_post_likes').insert({
+      post_id: postId,
+      user_id: user.id,
+    });
+
+    if (error) throw error;
+    return { success: true, error: null };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+};
+
+export const unlikeCommunityPost = async (postId: string) => {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Not authenticated');
+
+    const { error } = await supabase.from('community_post_likes').delete()
+      .eq('post_id', postId)
+      .eq('user_id', user.id);
+
+    if (error) throw error;
+    return { success: true, error: null };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+};
+
+export const checkIsCommunityPostLiked = async (postId: string) => {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return false;
+
+    const { data, error } = await supabase
+      .from('community_post_likes')
+      .select('id')
+      .eq('post_id', postId)
+      .eq('user_id', user.id)
+      .maybeSingle();
+
+    if (error) throw error;
+    return !!data;
+  } catch (error: any) {
+    return false;
+  }
+};
+
+// Community Post Reposts
+export const repostCommunityPost = async (postId: string) => {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Not authenticated');
+
+    const { error } = await supabase.from('community_post_reposts').insert({
+      post_id: postId,
+      user_id: user.id,
+    });
+
+    if (error) throw error;
+    return { success: true, error: null };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+};
+
+export const unrepostCommunityPost = async (postId: string) => {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Not authenticated');
+
+    const { error } = await supabase.from('community_post_reposts').delete()
+      .eq('post_id', postId)
+      .eq('user_id', user.id);
+
+    if (error) throw error;
+    return { success: true, error: null };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+};
+
+export const checkIsCommunityPostReposted = async (postId: string) => {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return false;
+
+    const { data, error } = await supabase
+      .from('community_post_reposts')
+      .select('id')
+      .eq('post_id', postId)
+      .eq('user_id', user.id)
+      .maybeSingle();
+
+    if (error) throw error;
+    return !!data;
+  } catch (error: any) {
+    return false;
+  }
+};
+
+// Community Post Comments
+export const getCommunityComments = async (postId: string) => {
+  try {
+    const { data, error } = await supabase
+      .from('community_post_comments')
+      .select('*, user_profiles(id, username, avatar_url)')
+      .eq('post_id', postId)
+      .order('created_at', { ascending: true });
+
+    if (error) throw error;
+    return data || [];
+  } catch (error: any) {
+    console.error('Error fetching community comments:', error);
+    return [];
+  }
+};
+
+export const addCommunityComment = async (postId: string, content: string) => {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Not authenticated');
+
+    const { data, error } = await supabase.from('community_post_comments').insert({
+      post_id: postId,
+      user_id: user.id,
+      content,
     }).select('*, user_profiles(id, username, avatar_url)').single();
 
     if (error) throw error;
@@ -687,6 +845,41 @@ export const checkIsVideoReposted = async (videoId: string) => {
     return !!data;
   } catch (error: any) {
     return false;
+  }
+};
+
+// Video Comments
+export const getVideoComments = async (videoId: string) => {
+  try {
+    const { data, error } = await supabase
+      .from('video_comments')
+      .select('*, user_profiles(id, username, avatar_url)')
+      .eq('video_id', videoId)
+      .order('created_at', { ascending: true });
+
+    if (error) throw error;
+    return data || [];
+  } catch (error: any) {
+    console.error('Error fetching video comments:', error);
+    return [];
+  }
+};
+
+export const addVideoComment = async (videoId: string, content: string) => {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Not authenticated');
+
+    const { data, error } = await supabase.from('video_comments').insert({
+      video_id: videoId,
+      user_id: user.id,
+      content,
+    }).select('*, user_profiles(id, username, avatar_url)').single();
+
+    if (error) throw error;
+    return { data, error: null };
+  } catch (error: any) {
+    return { data: null, error: error.message };
   }
 };
 

@@ -13,6 +13,7 @@ import VideosPage from './pages/VideosPage';
 import LeaderboardPage from './pages/LeaderboardPage';
 import Header from './components/layout/Header';
 import Sidebar from './components/layout/Sidebar';
+import BottomNav from './components/layout/BottomNav';
 import { AuthProvider } from './components/auth/AuthProvider';
 import { ProtectedRoute } from './components/auth/ProtectedRoute';
 import { useSidebar } from './hooks/useSidebar';
@@ -50,6 +51,8 @@ function App() {
                       </Routes>
                     </main>
                   </div>
+                  {/* Bottom Navigation for Mobile */}
+                  <BottomNav />
                 </div>
               </ProtectedRoute>
             }
