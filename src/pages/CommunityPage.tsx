@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../stores/authStore';
 import { 
   getCommunityPosts, 
@@ -12,58 +12,120 @@ import {
   getCommunityComments,
   addCommunityComment
 } from '../lib/api';
-import { Loader2, Image as ImageIcon, Video, Heart, MessageCircle, Share2, User, Twitter, Copy, X, Repeat, BarChart2, Send } from 'lucide-react';
+import { Loader2, Image as ImageIcon, Video, Heart, MessageCircle, Share2, User, Twitter, Copy, X, Repeat, BarChart2, Send, Bookmark, TrendingUp, Smile, Hash } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import AdPlacement from '../components/ads/AdPlacement';
+import { ClickableText } from '../components/common/ClickableText';
 
 const CommunityPage = () => {
   const { user } = useAuth();
   const [posts, setPosts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
+  const [page, setPage] = useState(1);
   const [newPost, setNewPost] = useState('');
   const [mediaFile, setMediaFile] = useState<File | null>(null);
   const [mediaPreview, setMediaPreview] = useState<string>('');
   const [posting, setPosting] = useState(false);
   const [shareMenuId, setShareMenuId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'foryou' | 'following'>('foryou');
-  const [postStates, setPostStates] = useState<Map<string, { liked: boolean; reposted: boolean }>>(new Map());
+  const [postStates, setPostStates] = useState<Map<string, { liked: boolean; reposted: boolean; bookmarked: boolean }>>(new Map());
   const [commentingOnPost, setCommentingOnPost] = useState<string | null>(null);
   const [commentText, setCommentText] = useState('');
   const [postComments, setPostComments] = useState<Map<string, any[]>>(new Map());
   const [viewingComments, setViewingComments] = useState<string | null>(null);
+  const observerTarget = useRef<HTMLDivElement>(null);
+
+  // Lazy loading with IntersectionObserver
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasMore && !loadingMore && !loading) {
+          loadMore();
+        }
+      },
+      { threshold: 0.5 }
+    );
+
+    if (observerTarget.current) {
+      observer.observe(observerTarget.current);
+    }
+
+    return () => {
+      if (observerTarget.current) {
+        observer.unobserve(observerTarget.current);
+      }
+    };
+  }, [hasMore, loadingMore, loading]);
 
   useEffect(() => {
-    loadPosts();
-  }, []);
+    loadInitialPosts();
+  }, [activeTab]);
 
-  const loadPosts = async () => {
+  const loadInitialPosts = async () => {
     setLoading(true);
-    const data = await getCommunityPosts(50);
-    setPosts(data);
+    setPage(1);
     
-    // Load interaction states
-    const states = new Map();
-    for (const post of data) {
-      const [liked, reposted] = await Promise.all([
-        checkIsCommunityPostLiked(post.id),
-        checkIsCommunityPostReposted(post.id),
-      ]);
-      states.set(post.id, { liked, reposted });
-    }
-    setPostStates(states);
+    const result = await getCommunityPosts({ page: 1, limit: 20 });
+    setPosts(result.data);
+    setHasMore(result.hasMore);
+    
+    // Load interaction states for first batch
+    await loadInteractionStates(result.data);
     
     setLoading(false);
+  };
+
+  const loadMore = useCallback(async () => {
+    if (loadingMore || !hasMore) return;
+    
+    setLoadingMore(true);
+    const nextPage = page + 1;
+    
+    const result = await getCommunityPosts({ page: nextPage, limit: 20 });
+    setPosts(prev => [...prev, ...result.data]);
+    setHasMore(result.hasMore);
+    setPage(nextPage);
+    
+    // Load interaction states for new posts
+    await loadInteractionStates(result.data);
+    
+    setLoadingMore(false);
+  }, [page, hasMore, loadingMore]);
+
+  const loadInteractionStates = async (postsToLoad: any[]) => {
+    const states = new Map(postStates);
+    for (const post of postsToLoad) {
+      if (!states.has(post.id)) {
+        const [liked, reposted] = await Promise.all([
+          checkIsCommunityPostLiked(post.id),
+          checkIsCommunityPostReposted(post.id),
+        ]);
+        states.set(post.id, { liked, reposted, bookmarked: false });
+      }
+    }
+    setPostStates(states);
   };
 
   const handleMediaSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    // Validate file size (10MB limit)
+    if (file.size > 10 * 1024 * 1024) {
+      alert('File size must be less than 10MB');
+      return;
+    }
+
     setMediaFile(file);
     setMediaPreview(URL.createObjectURL(file));
   };
 
   const removeMedia = () => {
+    if (mediaPreview) {
+      URL.revokeObjectURL(mediaPreview);
+    }
     setMediaFile(null);
     setMediaPreview('');
   };
@@ -78,9 +140,8 @@ const CommunityPage = () => {
     if (result.data) {
       setPosts([result.data, ...posts]);
       setNewPost('');
-      setMediaFile(null);
-      setMediaPreview('');
-      setPostStates(prev => new Map(prev).set(result.data.id, { liked: false, reposted: false }));
+      removeMedia();
+      setPostStates(prev => new Map(prev).set(result.data.id, { liked: false, reposted: false, bookmarked: false }));
     } else {
       alert('Failed to post: ' + result.error);
     }
@@ -92,38 +153,51 @@ const CommunityPage = () => {
     const state = postStates.get(postId);
     const isLiked = state?.liked || false;
 
+    // Optimistic update
+    setPosts(prev => prev.map(p => 
+      p.id === postId ? { ...p, likes_count: isLiked ? Math.max(0, p.likes_count - 1) : p.likes_count + 1 } : p
+    ));
+    setPostStates(prev => new Map(prev).set(postId, { ...state!, liked: !isLiked }));
+
+    // Actual API call
     if (isLiked) {
       await unlikeCommunityPost(postId);
-      setPosts(prev => prev.map(p => 
-        p.id === postId ? { ...p, likes_count: Math.max(0, p.likes_count - 1) } : p
-      ));
     } else {
       await likeCommunityPost(postId);
-      setPosts(prev => prev.map(p => 
-        p.id === postId ? { ...p, likes_count: p.likes_count + 1 } : p
-      ));
     }
-
-    setPostStates(prev => new Map(prev).set(postId, { ...state!, liked: !isLiked }));
   };
 
   const handleRepost = async (postId: string) => {
     const state = postStates.get(postId);
     const isReposted = state?.reposted || false;
 
+    // Optimistic update
+    setPosts(prev => prev.map(p => 
+      p.id === postId ? { ...p, reposts_count: isReposted ? Math.max(0, (p.reposts_count || 0) - 1) : (p.reposts_count || 0) + 1 } : p
+    ));
+    setPostStates(prev => new Map(prev).set(postId, { ...state!, reposted: !isReposted }));
+
+    // Actual API call
     if (isReposted) {
       await unrepostCommunityPost(postId);
-      setPosts(prev => prev.map(p => 
-        p.id === postId ? { ...p, reposts_count: Math.max(0, (p.reposts_count || 0) - 1) } : p
-      ));
     } else {
       await repostCommunityPost(postId);
-      setPosts(prev => prev.map(p => 
-        p.id === postId ? { ...p, reposts_count: (p.reposts_count || 0) + 1 } : p
-      ));
     }
+  };
 
-    setPostStates(prev => new Map(prev).set(postId, { ...state!, reposted: !isReposted }));
+  const handleBookmark = (postId: string) => {
+    const state = postStates.get(postId);
+    const isBookmarked = state?.bookmarked || false;
+    
+    setPostStates(prev => new Map(prev).set(postId, { ...state!, bookmarked: !isBookmarked }));
+    
+    // Store in localStorage
+    const bookmarks = JSON.parse(localStorage.getItem('bookmarkedPosts') || '[]');
+    if (isBookmarked) {
+      localStorage.setItem('bookmarkedPosts', JSON.stringify(bookmarks.filter((id: string) => id !== postId)));
+    } else {
+      localStorage.setItem('bookmarkedPosts', JSON.stringify([...bookmarks, postId]));
+    }
   };
 
   const handleViewComments = async (postId: string) => {
@@ -185,6 +259,10 @@ const CommunityPage = () => {
     setShareMenuId(null);
   };
 
+  const insertEmoji = (emoji: string) => {
+    setNewPost(prev => prev + emoji);
+  };
+
   return (
     <div className="max-w-2xl mx-auto min-h-screen bg-white pb-20">
       {/* Header with Tabs */}
@@ -236,6 +314,7 @@ const CommunityPage = () => {
                 placeholder="What's happening?"
                 className="w-full px-0 py-2 text-base text-gray-900 placeholder-gray-500 border-0 focus:outline-none resize-none"
                 rows={3}
+                maxLength={500}
               />
 
               {mediaPreview && (
@@ -265,15 +344,36 @@ const CommunityPage = () => {
                     <Video className="w-5 h-5 text-primary" />
                     <input type="file" accept="video/*" onChange={handleMediaSelect} className="hidden" />
                   </label>
+                  <button
+                    type="button"
+                    onClick={() => insertEmoji('😊')}
+                    className="p-2 hover:bg-primary/10 rounded-full transition-colors"
+                  >
+                    <Smile className="w-5 h-5 text-primary" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNewPost(prev => prev + '#')}
+                    className="p-2 hover:bg-primary/10 rounded-full transition-colors"
+                  >
+                    <Hash className="w-5 h-5 text-primary" />
+                  </button>
                 </div>
 
-                <button
-                  type="submit"
-                  disabled={(!newPost.trim() && !mediaFile) || posting}
-                  className="px-5 py-2 bg-primary text-white rounded-full font-bold hover:bg-red-600 transition-colors disabled:opacity-50"
-                >
-                  {posting ? 'Posting...' : 'Post'}
-                </button>
+                <div className="flex items-center gap-3">
+                  {newPost.length > 0 && (
+                    <span className={`text-xs ${newPost.length > 450 ? 'text-red-500' : 'text-gray-500'}`}>
+                      {newPost.length}/500
+                    </span>
+                  )}
+                  <button
+                    type="submit"
+                    disabled={(!newPost.trim() && !mediaFile) || posting}
+                    className="px-5 py-2 bg-primary text-white rounded-full font-bold hover:bg-red-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {posting ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Post'}
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -298,7 +398,7 @@ const CommunityPage = () => {
       ) : (
         <div>
           {posts.map((post, index) => {
-            const state = postStates.get(post.id) || { liked: false, reposted: false };
+            const state = postStates.get(post.id) || { liked: false, reposted: false, bookmarked: false };
             const comments = postComments.get(post.id) || [];
             
             return (
@@ -324,7 +424,9 @@ const CommunityPage = () => {
                         <span className="text-sm text-gray-500">{getTimeAgo(post.created_at)}</span>
                       </div>
 
-                      <p className="text-gray-900 mb-3 whitespace-pre-line leading-relaxed">{post.content}</p>
+                      <div className="text-gray-900 mb-3 whitespace-pre-line leading-relaxed">
+                        <ClickableText text={post.content} />
+                      </div>
 
                       {post.media_url && (
                         <div className="mb-3 rounded-2xl overflow-hidden border border-gray-200">
@@ -361,6 +463,13 @@ const CommunityPage = () => {
                           <span className={`text-sm ${state.liked ? 'text-red-500' : 'text-gray-500 group-hover:text-red-500'}`}>{post.likes_count || 0}</span>
                         </button>
 
+                        <button
+                          onClick={() => handleBookmark(post.id)}
+                          className="group p-2 hover:bg-primary/10 rounded-full transition-colors"
+                        >
+                          <Bookmark className={`w-5 h-5 ${state.bookmarked ? 'fill-primary text-primary' : 'text-gray-500 group-hover:text-primary'}`} />
+                        </button>
+
                         <div className="relative">
                           <button 
                             onClick={() => setShareMenuId(post.id)}
@@ -385,10 +494,6 @@ const CommunityPage = () => {
                             </>
                           )}
                         </div>
-
-                        <button className="group flex items-center gap-2 p-2 hover:bg-primary/10 rounded-full transition-colors">
-                          <BarChart2 className="w-5 h-5 text-gray-500 group-hover:text-primary" />
-                        </button>
                       </div>
 
                       {/* Comments Section */}
@@ -411,13 +516,19 @@ const CommunityPage = () => {
                                   setCommentingOnPost(post.id);
                                   setCommentText(e.target.value);
                                 }}
+                                onKeyPress={(e) => {
+                                  if (e.key === 'Enter' && !e.shiftKey) {
+                                    e.preventDefault();
+                                    handleAddComment(post.id);
+                                  }
+                                }}
                                 placeholder="Write a reply..."
                                 className="flex-1 px-3 py-2 border border-gray-300 rounded-full text-sm focus:outline-none focus:border-primary"
                               />
                               <button
                                 onClick={() => handleAddComment(post.id)}
                                 disabled={!commentText.trim()}
-                                className="p-2 bg-primary text-white rounded-full hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                                className="p-2 bg-primary text-white rounded-full hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                               >
                                 <Send className="w-4 h-4" />
                               </button>
@@ -428,21 +539,25 @@ const CommunityPage = () => {
                           <div className="space-y-3">
                             {comments.map((comment) => (
                               <div key={comment.id} className="flex gap-2">
-                                <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center overflow-hidden flex-shrink-0">
-                                  {comment.user_profiles?.avatar_url ? (
-                                    <img src={comment.user_profiles.avatar_url} alt="" className="w-full h-full object-cover" />
-                                  ) : (
-                                    <User className="w-4 h-4 text-gray-500" />
-                                  )}
-                                </div>
+                                <Link to={`/profile/${comment.user_id}`} className="flex-shrink-0">
+                                  <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center overflow-hidden">
+                                    {comment.user_profiles?.avatar_url ? (
+                                      <img src={comment.user_profiles.avatar_url} alt="" className="w-full h-full object-cover" />
+                                    ) : (
+                                      <User className="w-4 h-4 text-gray-500" />
+                                    )}
+                                  </div>
+                                </Link>
                                 <div className="flex-1 bg-gray-100 rounded-2xl px-3 py-2">
                                   <div className="flex items-center gap-2 mb-1">
-                                    <span className="text-sm font-semibold text-gray-900">
+                                    <Link to={`/profile/${comment.user_id}`} className="text-sm font-semibold text-gray-900 hover:underline">
                                       {comment.user_profiles?.username || 'Unknown'}
-                                    </span>
+                                    </Link>
                                     <span className="text-xs text-gray-500">{getTimeAgo(comment.created_at)}</span>
                                   </div>
-                                  <p className="text-sm text-gray-900">{comment.content}</p>
+                                  <div className="text-sm text-gray-900">
+                                    <ClickableText text={comment.content} />
+                                  </div>
                                 </div>
                               </div>
                             ))}
@@ -453,6 +568,7 @@ const CommunityPage = () => {
                   </div>
                 </div>
 
+                {/* Ad every 5 posts */}
                 {index > 0 && (index + 1) % 5 === 0 && (
                   <div className="p-4 border-b-8 border-gray-100">
                     <AdPlacement provider="propeller" format="rectangle" />
@@ -461,6 +577,26 @@ const CommunityPage = () => {
               </div>
             );
           })}
+
+          {/* Loading More Indicator */}
+          {hasMore && (
+            <div ref={observerTarget} className="py-8 flex flex-col items-center gap-2">
+              {loadingMore && (
+                <>
+                  <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                  <p className="text-sm text-gray-500">Loading more posts...</p>
+                </>
+              )}
+            </div>
+          )}
+
+          {!hasMore && posts.length > 0 && (
+            <div className="py-8 text-center">
+              <TrendingUp className="w-8 h-8 text-gray-300 mx-auto mb-2" />
+              <p className="text-sm text-gray-500">You're all caught up!</p>
+              <p className="text-xs text-gray-400 mt-1">Check back later for new posts</p>
+            </div>
+          )}
         </div>
       )}
     </div>
