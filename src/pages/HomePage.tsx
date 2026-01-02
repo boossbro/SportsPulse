@@ -21,12 +21,17 @@ const HomePage = () => {
   const loadContent = async () => {
     setLoading(true);
     
-    if (category === 'For You') {
-      const allContent = await getAllContentByCategory('', 50);
-      setContent(allContent);
-    } else {
-      const data = await getAllContentByCategory(category, 50);
-      setContent(data);
+    try {
+      if (category === 'For You') {
+        const result = await getAllContentByCategory('', { page: 1, limit: 50 });
+        setContent(result.data || []);
+      } else {
+        const result = await getAllContentByCategory(category, { page: 1, limit: 50 });
+        setContent(result.data || []);
+      }
+    } catch (error) {
+      console.error('Error loading content:', error);
+      setContent([]);
     }
     
     setLoading(false);
