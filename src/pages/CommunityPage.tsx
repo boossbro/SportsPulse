@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../stores/authStore';
 import { getCommunityPosts, createCommunityPost } from '../lib/api';
-import { Loader2, Image as ImageIcon, Video, Send, Heart, MessageCircle, Share2, User, Facebook, Twitter, Copy, Linkedin, Mail } from 'lucide-react';
+import { Loader2, Image as ImageIcon, Video, Heart, MessageCircle, Share2, User, Twitter, Copy, X, Repeat, BarChart2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import AdPlacement from '../components/ads/AdPlacement';
 
 const CommunityPage = () => {
   const { user } = useAuth();
@@ -10,8 +11,10 @@ const CommunityPage = () => {
   const [loading, setLoading] = useState(true);
   const [newPost, setNewPost] = useState('');
   const [mediaFile, setMediaFile] = useState<File | null>(null);
+  const [mediaPreview, setMediaPreview] = useState<string>('');
   const [posting, setPosting] = useState(false);
   const [shareMenuId, setShareMenuId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'foryou' | 'following'>('foryou');
 
   useEffect(() => {
     loadPosts();
@@ -24,9 +27,22 @@ const CommunityPage = () => {
     setLoading(false);
   };
 
+  const handleMediaSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setMediaFile(file);
+    setMediaPreview(URL.createObjectURL(file));
+  };
+
+  const removeMedia = () => {
+    setMediaFile(null);
+    setMediaPreview('');
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newPost.trim()) return;
+    if (!newPost.trim() && !mediaFile) return;
 
     setPosting(true);
     const result = await createCommunityPost(newPost, mediaFile || undefined);
@@ -35,6 +51,7 @@ const CommunityPage = () => {
       setPosts([result.data, ...posts]);
       setNewPost('');
       setMediaFile(null);
+      setMediaPreview('');
     } else {
       alert('Failed to post: ' + result.error);
     }
@@ -48,119 +65,132 @@ const CommunityPage = () => {
     const diffInMinutes = Math.floor((now.getTime() - date.getTime()) / (1000 * 60));
     
     if (diffInMinutes < 1) return 'Just now';
-    if (diffInMinutes < 60) return `${diffInMinutes}m ago`;
+    if (diffInMinutes < 60) return `${diffInMinutes}m`;
     
     const diffInHours = Math.floor(diffInMinutes / 60);
-    if (diffInHours < 24) return `${diffInHours}h ago`;
+    if (diffInHours < 24) return `${diffInHours}h`;
     
     const diffInDays = Math.floor(diffInHours / 24);
-    if (diffInDays < 7) return `${diffInDays}d ago`;
+    if (diffInDays < 7) return `${diffInDays}d`;
     
-    return date.toLocaleDateString();
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   };
 
   const handleShare = async (postId: string, content: string, platform?: string) => {
     const shareUrl = `${window.location.origin}/community/${postId}`;
-    const shareText = content.substring(0, 200) + (content.length > 200 ? '...' : '');
     
-    if (platform === 'facebook') {
-      window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}`, '_blank');
-    } else if (platform === 'twitter') {
-      window.open(`https://twitter.com/intent/tweet?url=${encodeURIComponent(shareUrl)}&text=${encodeURIComponent(shareText)}`, '_blank');
-    } else if (platform === 'linkedin') {
-      window.open(`https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(shareUrl)}`, '_blank');
-    } else if (platform === 'whatsapp') {
-      window.open(`https://wa.me/?text=${encodeURIComponent(shareText + ' ' + shareUrl)}`, '_blank');
-    } else if (platform === 'email') {
-      window.location.href = `mailto:?subject=${encodeURIComponent('Check out this post')}&body=${encodeURIComponent(shareText + '\n\nView post: ' + shareUrl)}`;
-    } else if (platform === 'copy') {
+    if (platform === 'copy') {
       try {
         await navigator.clipboard.writeText(shareUrl);
-        alert('✅ Link copied to clipboard!');
+        alert('✅ Link copied!');
       } catch (err) {
-        alert('Failed to copy link');
+        alert('Failed to copy');
       }
-    } else {
-      if (navigator.share) {
-        try {
-          await navigator.share({
-            text: shareText,
-            url: shareUrl,
-          });
-        } catch (err) {
-          console.log('Share cancelled');
-        }
-      } else {
-        setShareMenuId(postId);
-        return;
-      }
+    } else if (platform === 'twitter') {
+      window.open(`https://twitter.com/intent/tweet?url=${encodeURIComponent(shareUrl)}&text=${encodeURIComponent(content.substring(0, 200))}`, '_blank');
     }
     
     setShareMenuId(null);
   };
 
   return (
-    <div className="max-w-2xl mx-auto px-4 py-6">
+    <div className="max-w-2xl mx-auto min-h-screen bg-white pb-20">
+      {/* Header with Tabs */}
+      <div className="sticky top-14 bg-white z-10 border-b border-gray-200">
+        <div className="flex">
+          <button
+            onClick={() => setActiveTab('foryou')}
+            className={`flex-1 py-4 text-sm font-bold transition-colors relative ${
+              activeTab === 'foryou' ? 'text-gray-900' : 'text-gray-600 hover:bg-gray-50'
+            }`}
+          >
+            For you
+            {activeTab === 'foryou' && (
+              <div className="absolute bottom-0 left-0 right-0 h-1 bg-primary rounded-full" />
+            )}
+          </button>
+          <button
+            onClick={() => setActiveTab('following')}
+            className={`flex-1 py-4 text-sm font-bold transition-colors relative ${
+              activeTab === 'following' ? 'text-gray-900' : 'text-gray-600 hover:bg-gray-50'
+            }`}
+          >
+            Following
+            {activeTab === 'following' && (
+              <div className="absolute bottom-0 left-0 right-0 h-1 bg-primary rounded-full" />
+            )}
+          </button>
+        </div>
+      </div>
+
       {/* Create Post */}
-      <div className="bg-white rounded-lg shadow-sm p-4 mb-6">
+      <div className="border-b-8 border-gray-100 p-4">
         <form onSubmit={handleSubmit}>
-          <textarea
-            value={newPost}
-            onChange={(e) => setNewPost(e.target.value)}
-            placeholder="What's happening?"
-            className="w-full px-0 py-2 text-base text-gray-900 placeholder-gray-500 border-0 focus:outline-none resize-none"
-            rows={3}
-          />
-
-          {mediaFile && (
-            <div className="mt-2 relative">
-              <img
-                src={URL.createObjectURL(mediaFile)}
-                alt="Preview"
-                className="w-full rounded-lg max-h-64 object-cover"
+          <div className="flex gap-3">
+            <Link to={`/profile/${user?.id}`} className="flex-shrink-0">
+              <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center overflow-hidden">
+                {user?.avatar ? (
+                  <img src={user.avatar} alt="" className="w-full h-full object-cover" />
+                ) : (
+                  <User className="w-5 h-5 text-gray-500" />
+                )}
+              </div>
+            </Link>
+            
+            <div className="flex-1">
+              <textarea
+                value={newPost}
+                onChange={(e) => setNewPost(e.target.value)}
+                placeholder="What's happening?"
+                className="w-full px-0 py-2 text-base text-gray-900 placeholder-gray-500 border-0 focus:outline-none resize-none"
+                rows={3}
               />
-              <button
-                type="button"
-                onClick={() => setMediaFile(null)}
-                className="absolute top-2 right-2 bg-black/50 text-white rounded-full p-1"
-              >
-                ×
-              </button>
-            </div>
-          )}
 
-          <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-100">
-            <div className="flex items-center gap-2">
-              <label className="cursor-pointer p-2 hover:bg-gray-100 rounded-full transition-colors">
-                <ImageIcon className="w-5 h-5 text-primary" />
-                <input
-                  type="file"
-                  accept="image/*,video/*"
-                  onChange={(e) => setMediaFile(e.target.files?.[0] || null)}
-                  className="hidden"
-                />
-              </label>
-            </div>
-
-            <button
-              type="submit"
-              disabled={!newPost.trim() || posting}
-              className="px-5 py-2 bg-primary text-white rounded-full font-medium hover:bg-red-600 transition-colors disabled:opacity-50 flex items-center gap-2"
-            >
-              {posting ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Posting...
-                </>
-              ) : (
-                <>
-                  <Send className="w-4 h-4" />
-                  Post
-                </>
+              {mediaPreview && (
+                <div className="mt-3 relative rounded-2xl overflow-hidden border border-gray-200">
+                  {mediaFile?.type.startsWith('video/') ? (
+                    <video src={mediaPreview} controls className="w-full max-h-96" />
+                  ) : (
+                    <img src={mediaPreview} alt="Preview" className="w-full max-h-96 object-cover" />
+                  )}
+                  <button
+                    type="button"
+                    onClick={removeMedia}
+                    className="absolute top-2 right-2 p-1.5 bg-gray-900/80 hover:bg-gray-900 text-white rounded-full transition-colors"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
               )}
-            </button>
+
+              <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-200">
+                <div className="flex items-center gap-1">
+                  <label className="cursor-pointer p-2 hover:bg-primary/10 rounded-full transition-colors">
+                    <ImageIcon className="w-5 h-5 text-primary" />
+                    <input type="file" accept="image/*" onChange={handleMediaSelect} className="hidden" />
+                  </label>
+                  <label className="cursor-pointer p-2 hover:bg-primary/10 rounded-full transition-colors">
+                    <Video className="w-5 h-5 text-primary" />
+                    <input type="file" accept="video/*" onChange={handleMediaSelect} className="hidden" />
+                  </label>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={(!newPost.trim() && !mediaFile) || posting}
+                  className="px-5 py-2 bg-primary text-white rounded-full font-bold hover:bg-red-600 transition-colors disabled:opacity-50"
+                >
+                  {posting ? 'Posting...' : 'Post'}
+                </button>
+              </div>
+            </div>
           </div>
         </form>
+      </div>
+
+      {/* Ad Placement */}
+      <div className="p-4">
+        <AdPlacement provider="adsense" format="horizontal" />
       </div>
 
       {/* Posts Feed */}
@@ -169,113 +199,101 @@ const CommunityPage = () => {
           <Loader2 className="w-8 h-8 animate-spin text-primary" />
         </div>
       ) : posts.length === 0 ? (
-        <div className="text-center py-16 bg-white rounded-lg">
+        <div className="text-center py-16">
           <MessageCircle className="w-16 h-16 text-gray-300 mx-auto mb-4" />
           <p className="text-gray-600">No posts yet. Be the first to share!</p>
         </div>
       ) : (
-        <div className="space-y-4">
-          {posts.map((post) => (
-            <div key={post.id} className="bg-white rounded-lg shadow-sm p-4">
-              {/* Author */}
-              <div className="flex items-center gap-3 mb-3">
-                <Link to={`/profile/${post.user_id}`}>
-                  <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center overflow-hidden">
-                    {post.user_profiles?.avatar_url ? (
-                      <img
-                        src={post.user_profiles.avatar_url}
-                        alt=""
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      <User className="w-5 h-5 text-gray-500" />
-                    )}
-                  </div>
-                </Link>
-                <div className="flex-1">
-                  <Link
-                    to={`/profile/${post.user_id}`}
-                    className="font-semibold text-gray-900 hover:text-primary transition-colors"
-                  >
-                    {post.user_profiles?.username || 'Unknown'}
+        <div>
+          {posts.map((post, index) => (
+            <div key={post.id}>
+              <div className="border-b border-gray-100 p-4 hover:bg-gray-50 transition-colors">
+                <div className="flex gap-3">
+                  <Link to={`/profile/${post.user_id}`} className="flex-shrink-0">
+                    <div className="w-12 h-12 rounded-full bg-gray-200 flex items-center justify-center overflow-hidden">
+                      {post.user_profiles?.avatar_url ? (
+                        <img src={post.user_profiles.avatar_url} alt="" className="w-full h-full object-cover" />
+                      ) : (
+                        <User className="w-6 h-6 text-gray-500" />
+                      )}
+                    </div>
                   </Link>
-                  <div className="text-xs text-gray-500">{getTimeAgo(post.created_at)}</div>
+
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Link to={`/profile/${post.user_id}`} className="font-bold text-gray-900 hover:underline">
+                        {post.user_profiles?.username || 'Unknown'}
+                      </Link>
+                      <span className="text-gray-500">·</span>
+                      <span className="text-sm text-gray-500">{getTimeAgo(post.created_at)}</span>
+                    </div>
+
+                    <p className="text-gray-900 mb-3 whitespace-pre-line leading-relaxed">{post.content}</p>
+
+                    {post.media_url && (
+                      <div className="mb-3 rounded-2xl overflow-hidden border border-gray-200">
+                        {post.media_type === 'video' ? (
+                          <video src={post.media_url} controls className="w-full max-h-96" />
+                        ) : (
+                          <img src={post.media_url} alt="" className="w-full max-h-96 object-cover" />
+                        )}
+                      </div>
+                    )}
+
+                    <div className="flex items-center justify-between max-w-md mt-2">
+                      <button className="group flex items-center gap-2 p-2 -ml-2 hover:bg-red-50 rounded-full transition-colors">
+                        <Heart className="w-5 h-5 text-gray-500 group-hover:text-red-500" />
+                        <span className="text-sm text-gray-500 group-hover:text-red-500">{post.likes_count || 0}</span>
+                      </button>
+                      
+                      <button className="group flex items-center gap-2 p-2 hover:bg-blue-50 rounded-full transition-colors">
+                        <MessageCircle className="w-5 h-5 text-gray-500 group-hover:text-blue-500" />
+                        <span className="text-sm text-gray-500 group-hover:text-blue-500">{post.comments_count || 0}</span>
+                      </button>
+                      
+                      <button className="group flex items-center gap-2 p-2 hover:bg-green-50 rounded-full transition-colors">
+                        <Repeat className="w-5 h-5 text-gray-500 group-hover:text-green-500" />
+                        <span className="text-sm text-gray-500 group-hover:text-green-500">{post.shares_count || 0}</span>
+                      </button>
+
+                      <div className="relative">
+                        <button 
+                          onClick={() => setShareMenuId(post.id)}
+                          className="group flex items-center gap-2 p-2 hover:bg-primary/10 rounded-full transition-colors"
+                        >
+                          <Share2 className="w-5 h-5 text-gray-500 group-hover:text-primary" />
+                        </button>
+                        
+                        {shareMenuId === post.id && (
+                          <>
+                            <div className="fixed inset-0 z-30" onClick={() => setShareMenuId(null)} />
+                            <div className="absolute bottom-full right-0 mb-2 bg-white rounded-xl shadow-xl border border-gray-200 py-2 z-40 min-w-[200px]">
+                              <button onClick={() => handleShare(post.id, post.content, 'copy')} className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 w-full">
+                                <Copy className="w-4 h-4" />
+                                Copy link
+                              </button>
+                              <button onClick={() => handleShare(post.id, post.content, 'twitter')} className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 w-full">
+                                <Twitter className="w-4 h-4" />
+                                Share via Twitter
+                              </button>
+                            </div>
+                          </>
+                        )}
+                      </div>
+
+                      <button className="group flex items-center gap-2 p-2 hover:bg-primary/10 rounded-full transition-colors">
+                        <BarChart2 className="w-5 h-5 text-gray-500 group-hover:text-primary" />
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
 
-              {/* Content */}
-              <p className="text-gray-900 mb-3 whitespace-pre-line">{post.content}</p>
-
-              {/* Media */}
-              {post.media_url && (
-                <div className="mb-3 rounded-lg overflow-hidden">
-                  {post.media_type === 'video' ? (
-                    <video src={post.media_url} controls className="w-full" />
-                  ) : (
-                    <img src={post.media_url} alt="" className="w-full" />
-                  )}
+              {index > 0 && (index + 1) % 5 === 0 && (
+                <div className="p-4 border-b-8 border-gray-100">
+                  <AdPlacement provider="propeller" format="rectangle" />
                 </div>
               )}
-
-              {/* Engagement */}
-              <div className="flex items-center gap-6 pt-3 border-t border-gray-100">
-                <button className="flex items-center gap-2 text-gray-600 hover:text-red-500 transition-colors">
-                  <Heart className="w-5 h-5" />
-                  <span className="text-sm">{post.likes_count || 0}</span>
-                </button>
-                <button className="flex items-center gap-2 text-gray-600 hover:text-blue-500 transition-colors">
-                  <MessageCircle className="w-5 h-5" />
-                  <span className="text-sm">{post.comments_count || 0}</span>
-                </button>
-                <div className="relative">
-                  <button 
-                    onClick={() => handleShare(post.id, post.content)}
-                    className="flex items-center gap-2 text-gray-600 hover:text-green-500 transition-colors"
-                  >
-                    <Share2 className="w-5 h-5" />
-                    <span className="text-sm">{post.shares_count || 0}</span>
-                  </button>
-                  
-                  {shareMenuId === post.id && (
-                    <>
-                      <div 
-                        className="fixed inset-0 z-30" 
-                        onClick={() => setShareMenuId(null)}
-                      />
-                      <div className="absolute bottom-full left-0 mb-2 bg-white rounded-lg shadow-xl border border-gray-200 py-2 z-40 min-w-[180px]">
-                        <button
-                          onClick={() => handleShare(post.id, post.content, 'facebook')}
-                          className="flex items-center gap-3 px-3 py-2 text-sm text-gray-700 hover:bg-blue-50 w-full"
-                        >
-                          <Facebook className="w-4 h-4 text-blue-600" />
-                          Facebook
-                        </button>
-                        <button
-                          onClick={() => handleShare(post.id, post.content, 'twitter')}
-                          className="flex items-center gap-3 px-3 py-2 text-sm text-gray-700 hover:bg-sky-50 w-full"
-                        >
-                          <Twitter className="w-4 h-4 text-sky-500" />
-                          Twitter
-                        </button>
-                        <button
-                          onClick={() => handleShare(post.id, post.content, 'whatsapp')}
-                          className="flex items-center gap-3 px-3 py-2 text-sm text-gray-700 hover:bg-green-50 w-full"
-                        >
-                          <MessageCircle className="w-4 h-4 text-green-600" />
-                          WhatsApp
-                        </button>
-                        <button
-                          onClick={() => handleShare(post.id, post.content, 'copy')}
-                          className="flex items-center gap-3 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 w-full border-t border-gray-100"
-                        >
-                          <Copy className="w-4 h-4 text-gray-600" />
-                          Copy Link
-                        </button>
-                      </div>
-                    </>
-                  )}
-                </div>
-              </div>
             </div>
           ))}
         </div>
