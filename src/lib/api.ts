@@ -1733,3 +1733,134 @@ export const getUserAnalytics = async (userId: string) => {
     return null;
   }
 };
+
+// ============================================
+// USER CONTENT AGGREGATION (FOR PROFILE TABS)
+// ============================================
+
+export const getUserVideos = async (userId: string, params?: PaginationParams) => {
+  try {
+    const page = params?.page || 1;
+    const limit = params?.limit || 20;
+    const from = (page - 1) * limit;
+    const to = from + limit - 1;
+
+    const { data, error, count } = await supabase
+      .from('video_stories')
+      .select('*, user_profiles(id, username, avatar_url)', { count: 'exact' })
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .range(from, to);
+
+    if (error) throw error;
+    
+    return {
+      data: data || [],
+      hasMore: (data?.length || 0) === limit,
+      total: count || 0,
+    };
+  } catch (error: any) {
+    console.error('Error fetching user videos:', error);
+    return { data: [], hasMore: false, total: 0 };
+  }
+};
+
+export const getUserLikedContent = async (userId: string, params?: PaginationParams) => {
+  try {
+    const page = params?.page || 1;
+    const limit = params?.limit || 20;
+
+    // Get liked blog posts
+    const { data: likedPosts } = await supabase
+      .from('blog_post_likes')
+      .select('blog_posts(*, user_profiles(id, username, avatar_url))')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+
+    // Get liked community posts
+    const { data: likedCommunity } = await supabase
+      .from('community_post_likes')
+      .select('community_posts(*, user_profiles(id, username, avatar_url))')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+
+    // Get liked videos
+    const { data: likedVideos } = await supabase
+      .from('video_likes')
+      .select('video_stories(*, user_profiles(id, username, avatar_url))')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+
+    const allLiked = [
+      ...(likedPosts?.map((item: any) => ({ ...item.blog_posts, type: 'blog' })) || []),
+      ...(likedCommunity?.map((item: any) => ({ ...item.community_posts, type: 'community' })) || []),
+      ...(likedVideos?.map((item: any) => ({ ...item.video_stories, type: 'video' })) || []),
+    ].sort((a, b) => {
+      const dateA = new Date(a.created_at).getTime();
+      const dateB = new Date(b.created_at).getTime();
+      return dateB - dateA;
+    });
+
+    return {
+      data: allLiked.slice(0, limit),
+      hasMore: allLiked.length > limit,
+      total: allLiked.length,
+    };
+  } catch (error: any) {
+    console.error('Error fetching liked content:', error);
+    return { data: [], hasMore: false, total: 0 };
+  }
+};
+
+export const getUserRepostedContent = async (userId: string, params?: PaginationParams) => {
+  try {
+    const page = params?.page || 1;
+    const limit = params?.limit || 20;
+
+    // Get reposted blog posts
+    const { data: repostedPosts } = await supabase
+      .from('blog_post_reposts')
+      .select('blog_posts(*, user_profiles(id, username, avatar_url))')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+
+    // Get reposted community posts
+    const { data: repostedCommunity } = await supabase
+      .from('community_post_reposts')
+      .select('community_posts(*, user_profiles(id, username, avatar_url))')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+
+    // Get reposted videos
+    const { data: repostedVideos } = await supabase
+      .from('video_reposts')
+      .select('video_stories(*, user_profiles(id, username, avatar_url))')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+
+    const allReposted = [
+      ...(repostedPosts?.map((item: any) => ({ ...item.blog_posts, type: 'blog' })) || []),
+      ...(repostedCommunity?.map((item: any) => ({ ...item.community_posts, type: 'community' })) || []),
+      ...(repostedVideos?.map((item: any) => ({ ...item.video_stories, type: 'video' })) || []),
+    ].sort((a, b) => {
+      const dateA = new Date(a.created_at).getTime();
+      const dateB = new Date(b.created_at).getTime();
+      return dateB - dateA;
+    });
+
+    return {
+      data: allReposted.slice(0, limit),
+      hasMore: allReposted.length > limit,
+      total: allReposted.length,
+    };
+  } catch (error: any) {
+    console.error('Error fetching reposted content:', error);
+    return { data: [], hasMore: false, total: 0 };
+  }
+};

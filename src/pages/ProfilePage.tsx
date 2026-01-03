@@ -8,6 +8,9 @@ import {
   unfollowUser,
   getUserBlogPosts,
   getUserCommunityPosts,
+  getUserVideos,
+  getUserLikedContent,
+  getUserRepostedContent,
   getUserAnalytics,
 } from '../lib/api';
 import {
@@ -26,6 +29,8 @@ const ProfilePage = () => {
   const [posts, setPosts] = useState<any[]>([]);
   const [communityPosts, setCommunityPosts] = useState<any[]>([]);
   const [videos, setVideos] = useState<any[]>([]);
+  const [likedContent, setLikedContent] = useState<any[]>([]);
+  const [repostedContent, setRepostedContent] = useState<any[]>([]);
   const [analytics, setAnalytics] = useState<any>(null);
   const [isFollowing, setIsFollowing] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -41,6 +46,13 @@ const ProfilePage = () => {
   useEffect(() => {
     loadProfile();
   }, [id, isOwnProfile]);
+
+  useEffect(() => {
+    // Reset when tab changes
+    setPage(1);
+    setHasMore(true);
+    loadTabContent();
+  }, [activeTab]);
 
   useEffect(() => {
     const observer = new IntersectionObserver(
@@ -84,6 +96,24 @@ const ProfilePage = () => {
     setLoading(false);
   };
 
+  const loadTabContent = async () => {
+    if (!id) return;
+    
+    if (activeTab === 'videos') {
+      const result = await getUserVideos(id, { page: 1, limit: 20 });
+      setVideos(result.data || []);
+      setHasMore(result.hasMore);
+    } else if (activeTab === 'likes') {
+      const result = await getUserLikedContent(id, { page: 1, limit: 20 });
+      setLikedContent(result.data || []);
+      setHasMore(result.hasMore);
+    } else if (activeTab === 'reposts') {
+      const result = await getUserRepostedContent(id, { page: 1, limit: 20 });
+      setRepostedContent(result.data || []);
+      setHasMore(result.hasMore);
+    }
+  };
+
   const loadMoreContent = useCallback(async () => {
     if (!id || loadingMore || !hasMore) return;
     
@@ -97,6 +127,10 @@ const ProfilePage = () => {
     } else if (activeTab === 'community') {
       const result = await getUserCommunityPosts(id, { page: nextPage, limit: 20 });
       setCommunityPosts(prev => [...prev, ...(result.data || [])]);
+      setHasMore(result.hasMore);
+    } else if (activeTab === 'videos') {
+      const result = await getUserVideos(id, { page: nextPage, limit: 20 });
+      setVideos(prev => [...prev, ...(result.data || [])]);
       setHasMore(result.hasMore);
     }
     
@@ -539,11 +573,176 @@ const ProfilePage = () => {
             </div>
           )}
 
-          {/* Videos, Likes, Reposts Tabs - Placeholder */}
-          {(activeTab === 'videos' || activeTab === 'likes' || activeTab === 'reposts') && (
-            <div className="text-center py-12 px-4">
-              <Video className="w-16 h-16 text-gray-300 mx-auto mb-3" />
-              <p className="text-gray-600 font-medium">Coming soon</p>
+          {/* Videos Tab */}
+          {activeTab === 'videos' && (
+            <div>
+              {videos.length === 0 ? (
+                <div className="text-center py-12 px-4">
+                  <Video className="w-16 h-16 text-gray-300 mx-auto mb-3" />
+                  <p className="text-gray-600 font-medium">No videos yet</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-2 p-2">
+                  {videos.map((video) => (
+                    <Link
+                      key={video.id}
+                      to={`/videos`}
+                      className="relative aspect-[9/16] bg-gray-900 rounded-lg overflow-hidden group"
+                    >
+                      {video.thumbnail_url ? (
+                        <img src={video.thumbnail_url} alt="" className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="w-full h-full bg-gray-800" />
+                      )}
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
+                      <div className="absolute bottom-0 left-0 right-0 p-3">
+                        <p className="text-white text-sm font-semibold line-clamp-2 mb-2">{video.title}</p>
+                        <div className="flex items-center gap-3 text-xs text-white/90">
+                          <div className="flex items-center gap-1">
+                            <Play className="w-3 h-3" />
+                            <span>{video.views_count || 0}</span>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <Heart className="w-3 h-3" />
+                            <span>{video.likes_count || 0}</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="absolute top-2 right-2 bg-black/70 px-2 py-1 rounded text-xs text-white">
+                        {video.duration || 0}s
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Likes Tab */}
+          {activeTab === 'likes' && (
+            <div>
+              {likedContent.length === 0 ? (
+                <div className="text-center py-12 px-4">
+                  <Heart className="w-16 h-16 text-gray-300 mx-auto mb-3" />
+                  <p className="text-gray-600 font-medium">No liked content yet</p>
+                </div>
+              ) : (
+                <div className="divide-y divide-gray-100">
+                  {likedContent.map((item) => (
+                    <div key={`${item.type}-${item.id}`} className="p-4">
+                      {item.type === 'blog' ? (
+                        <Link to={`/story/${item.id}`} className="block hover:bg-gray-50 -m-4 p-4 rounded-lg">
+                          <div className="flex gap-3">
+                            {item.cover_image && (
+                              <div className="w-20 h-20 flex-shrink-0 rounded-lg overflow-hidden bg-gray-200">
+                                <img src={item.cover_image} alt="" className="w-full h-full object-cover" />
+                              </div>
+                            )}
+                            <div className="flex-1 min-w-0">
+                              <h3 className="text-sm font-bold text-gray-900 line-clamp-2 mb-1">{item.title}</h3>
+                              <p className="text-xs text-gray-600 line-clamp-2">{item.excerpt}</p>
+                            </div>
+                          </div>
+                        </Link>
+                      ) : item.type === 'community' ? (
+                        <div>
+                          <div className="text-sm text-gray-900 mb-2">
+                            <ClickableText text={item.content} />
+                          </div>
+                          {item.media_url && (
+                            <div className="rounded-lg overflow-hidden">
+                              {item.media_type === 'video' ? (
+                                <video src={item.media_url} controls className="w-full max-h-60" />
+                              ) : (
+                                <img src={item.media_url} alt="" className="w-full max-h-60 object-cover" />
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <Link to={`/videos`} className="block">
+                          <div className="flex gap-3">
+                            <div className="w-20 h-20 flex-shrink-0 rounded-lg overflow-hidden bg-gray-900">
+                              {item.thumbnail_url && (
+                                <img src={item.thumbnail_url} alt="" className="w-full h-full object-cover" />
+                              )}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <h3 className="text-sm font-bold text-gray-900 line-clamp-2">{item.title}</h3>
+                            </div>
+                          </div>
+                        </Link>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Reposts Tab */}
+          {activeTab === 'reposts' && (
+            <div>
+              {repostedContent.length === 0 ? (
+                <div className="text-center py-12 px-4">
+                  <Repeat className="w-16 h-16 text-gray-300 mx-auto mb-3" />
+                  <p className="text-gray-600 font-medium">No reposted content yet</p>
+                </div>
+              ) : (
+                <div className="divide-y divide-gray-100">
+                  {repostedContent.map((item) => (
+                    <div key={`${item.type}-${item.id}`} className="p-4">
+                      <div className="flex items-center gap-2 text-sm text-gray-600 mb-3">
+                        <Repeat className="w-4 h-4" />
+                        <span>You reposted</span>
+                      </div>
+                      {item.type === 'blog' ? (
+                        <Link to={`/story/${item.id}`} className="block hover:bg-gray-50 -m-4 p-4 rounded-lg">
+                          <div className="flex gap-3">
+                            {item.cover_image && (
+                              <div className="w-20 h-20 flex-shrink-0 rounded-lg overflow-hidden bg-gray-200">
+                                <img src={item.cover_image} alt="" className="w-full h-full object-cover" />
+                              </div>
+                            )}
+                            <div className="flex-1 min-w-0">
+                              <h3 className="text-sm font-bold text-gray-900 line-clamp-2 mb-1">{item.title}</h3>
+                              <p className="text-xs text-gray-600 line-clamp-2">{item.excerpt}</p>
+                            </div>
+                          </div>
+                        </Link>
+                      ) : item.type === 'community' ? (
+                        <div>
+                          <div className="text-sm text-gray-900 mb-2">
+                            <ClickableText text={item.content} />
+                          </div>
+                          {item.media_url && (
+                            <div className="rounded-lg overflow-hidden">
+                              {item.media_type === 'video' ? (
+                                <video src={item.media_url} controls className="w-full max-h-60" />
+                              ) : (
+                                <img src={item.media_url} alt="" className="w-full max-h-60 object-cover" />
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <Link to={`/videos`} className="block">
+                          <div className="flex gap-3">
+                            <div className="w-20 h-20 flex-shrink-0 rounded-lg overflow-hidden bg-gray-900">
+                              {item.thumbnail_url && (
+                                <img src={item.thumbnail_url} alt="" className="w-full h-full object-cover" />
+                              )}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <h3 className="text-sm font-bold text-gray-900 line-clamp-2">{item.title}</h3>
+                            </div>
+                          </div>
+                        </Link>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>
