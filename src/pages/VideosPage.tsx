@@ -63,7 +63,7 @@ const VideosPage = () => {
     setLoading(true);
     setPage(1);
     
-    const result = await getVideoStories(undefined, { page: 1, limit: 10 });
+    const result = await getVideoStories(undefined, { page: 1, limit: 5 });
     setVideos(result.data);
     setHasMore(result.hasMore);
     
@@ -79,7 +79,7 @@ const VideosPage = () => {
     setLoadingMore(true);
     const nextPage = page + 1;
     
-    const result = await getVideoStories(undefined, { page: nextPage, limit: 10 });
+    const result = await getVideoStories(undefined, { page: nextPage, limit: 5 });
     setVideos(prev => [...prev, ...result.data]);
     setHasMore(result.hasMore);
     setPage(nextPage);

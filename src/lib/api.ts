@@ -548,7 +548,7 @@ export const moderateContent = async (
 export const getCommunityPosts = async (params?: PaginationParams) => {
   try {
     const page = params?.page || 1;
-    const limit = params?.limit || 20;
+    const limit = params?.limit || 10; // Reduced from 20 to 10 for faster initial load
     const from = (page - 1) * limit;
     const to = from + limit - 1;
 
@@ -626,6 +626,9 @@ export const createCommunityPost = async (content: string, media?: File) => {
       mediaType = type;
     }
 
+    // Extract hashtags from content
+    const hashtags = extractHashtags(content);
+
     const { data, error } = await supabase.from('community_posts').insert({
       user_id: user.id,
       content,
@@ -634,6 +637,27 @@ export const createCommunityPost = async (content: string, media?: File) => {
     }).select('*, user_profiles(id, username, avatar_url)').single();
 
     if (error) throw error;
+
+    // Process hashtags for community posts
+    for (const tag of hashtags) {
+      const { data: existingTag } = await supabase
+        .from('hashtags')
+        .select('id, usage_count')
+        .eq('tag', tag)
+        .maybeSingle();
+
+      if (existingTag) {
+        await supabase
+          .from('hashtags')
+          .update({ usage_count: existingTag.usage_count + 1, updated_at: new Date().toISOString() })
+          .eq('id', existingTag.id);
+      } else {
+        await supabase
+          .from('hashtags')
+          .insert({ tag, usage_count: 1 });
+      }
+    }
+
     return { data, error: null };
   } catch (error: any) {
     return { data: null, error: error.message };
@@ -788,7 +812,7 @@ export const addCommunityComment = async (postId: string, content: string) => {
 export const getVideoStories = async (category?: string, params?: PaginationParams) => {
   try {
     const page = params?.page || 1;
-    const limit = params?.limit || 20;
+    const limit = params?.limit || 5; // Reduced from 10/20 to 5 for faster initial load
     const from = (page - 1) * limit;
     const to = from + limit - 1;
 
@@ -1448,16 +1472,58 @@ export const deleteBlogComment = async (commentId: string) => {
 
 export const getTrendingHashtags = async (limit = 10) => {
   try {
+    // Get hashtags from all sources with aggregated counts
     const { data, error } = await supabase
       .from('hashtags')
       .select('*')
       .order('usage_count', { ascending: false })
+      .order('updated_at', { ascending: false })
       .limit(limit);
 
     if (error) throw error;
     return data || [];
   } catch (error: any) {
     console.error('Error fetching trending hashtags:', error);
+    return [];
+  }
+};
+
+export const getAllHashtagsWithContent = async (limit = 20) => {
+  try {
+    // Get hashtags with content counts from all sources
+    const { data: hashtags, error } = await supabase
+      .from('hashtags')
+      .select('*')
+      .order('usage_count', { ascending: false })
+      .limit(limit);
+
+    if (error) throw error;
+
+    // For each hashtag, get counts from different content types
+    const enrichedHashtags = await Promise.all(
+      (hashtags || []).map(async (tag) => {
+        const [blogCount, videoCount] = await Promise.all([
+          supabase
+            .from('blog_post_hashtags')
+            .select('id', { count: 'exact', head: true })
+            .eq('hashtag_id', tag.id),
+          supabase
+            .from('video_hashtags')
+            .select('id', { count: 'exact', head: true })
+            .eq('hashtag_id', tag.id),
+        ]);
+
+        return {
+          ...tag,
+          blog_count: blogCount.count || 0,
+          video_count: videoCount.count || 0,
+        };
+      })
+    );
+
+    return enrichedHashtags;
+  } catch (error: any) {
+    console.error('Error fetching all hashtags with content:', error);
     return [];
   }
 };

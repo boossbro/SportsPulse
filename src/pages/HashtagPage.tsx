@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { getAllContentByHashtag, getTrendingHashtags } from '../lib/api';
+import { getAllContentByHashtag, getAllHashtagsWithContent } from '../lib/api';
 import { Hash, TrendingUp, Loader2, Image as ImageIcon, Video, FileText, User, Heart, MessageCircle, Eye } from 'lucide-react';
 import { ClickableText } from '../components/common/ClickableText';
 
@@ -67,7 +67,7 @@ const HashtagPage = () => {
   }, [tag, page, hasMore, loadingMore]);
 
   const loadTrendingTags = async () => {
-    const tags = await getTrendingHashtags(15);
+    const tags = await getAllHashtagsWithContent(15);
     setTrendingTags(tags);
   };
 
@@ -298,6 +298,13 @@ const HashtagPage = () => {
                             <p className="text-sm text-gray-600">
                               {hashtag.usage_count.toLocaleString()} {hashtag.usage_count === 1 ? 'post' : 'posts'}
                             </p>
+                            {(hashtag.blog_count > 0 || hashtag.video_count > 0) && (
+                              <div className="flex items-center gap-2 mt-1 text-xs text-gray-500">
+                                {hashtag.blog_count > 0 && <span>{hashtag.blog_count} articles</span>}
+                                {hashtag.blog_count > 0 && hashtag.video_count > 0 && <span>•</span>}
+                                {hashtag.video_count > 0 && <span>{hashtag.video_count} videos</span>}
+                              </div>
+                            )}
                           </div>
                         </div>
                         <TrendingUp className="w-5 h-5 text-green-500" />

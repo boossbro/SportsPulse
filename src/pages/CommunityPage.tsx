@@ -67,7 +67,7 @@ const CommunityPage = () => {
     setLoading(true);
     setPage(1);
     
-    const result = await getCommunityPosts({ page: 1, limit: 20 });
+    const result = await getCommunityPosts({ page: 1, limit: 10 });
     setPosts(result.data);
     setHasMore(result.hasMore);
     
@@ -83,7 +83,7 @@ const CommunityPage = () => {
     setLoadingMore(true);
     const nextPage = page + 1;
     
-    const result = await getCommunityPosts({ page: nextPage, limit: 20 });
+    const result = await getCommunityPosts({ page: nextPage, limit: 10 });
     setPosts(prev => [...prev, ...result.data]);
     setHasMore(result.hasMore);
     setPage(nextPage);
