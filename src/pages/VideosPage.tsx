@@ -444,15 +444,15 @@ const VideosPage = () => {
               </div>
             </div>
 
-            {/* TikTok-Style Comments Panel (Slide Up) */}
+            {/* TikTok-Style Comments Panel (Slide Up) - Fixed z-index for better visibility */}
             {isCommentsOpen && (
               <>
                 <div 
-                  className="absolute inset-0 bg-black/50 z-30"
+                  className="fixed inset-0 bg-black/60 z-50"
                   onClick={() => setCommentsVisible(null)}
                 />
                 
-                <div className="absolute bottom-0 left-0 right-0 max-h-[70vh] bg-white rounded-t-3xl z-40 overflow-hidden flex flex-col animate-slide-up">
+                <div className="fixed bottom-0 left-0 right-0 max-h-[75vh] bg-white rounded-t-3xl z-[60] overflow-hidden flex flex-col animate-slide-up shadow-2xl">
                   {/* Header */}
                   <div className="flex items-center justify-between p-4 border-b border-gray-200 bg-white sticky top-0 z-10">
                     <h3 className="text-lg font-bold text-gray-900">
