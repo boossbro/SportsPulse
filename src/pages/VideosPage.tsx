@@ -12,11 +12,12 @@ import {
   getVideoComments,
   addVideoComment
 } from '../lib/api';
-import { Loader2, Heart, MessageCircle, Share2, User, Volume2, VolumeX, Play, Repeat, Facebook, Twitter, Copy, Linkedin, Mail, Send, X, TrendingUp, Bookmark } from 'lucide-react';
+import { Loader2, Heart, MessageCircle, Share2, User, Volume2, VolumeX, Play, Repeat, Facebook, Twitter, Copy, Linkedin, Mail, Send, X, TrendingUp, Bookmark, ChevronUp } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { ClickableText } from '../components/common/ClickableText';
 
 const VideosPage = () => {
+  const { user } = useAuth();
   const [videos, setVideos] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -29,6 +30,7 @@ const VideosPage = () => {
   const [commentsVisible, setCommentsVisible] = useState<string | null>(null);
   const [comments, setComments] = useState<Map<string, any[]>>(new Map());
   const [commentText, setCommentText] = useState('');
+  const [loadingComments, setLoadingComments] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRefs = useRef<(HTMLVideoElement | null)[]>([]);
 
@@ -39,18 +41,14 @@ const VideosPage = () => {
   useEffect(() => {
     const currentVideo = videoRefs.current[currentIndex];
     if (currentVideo) {
-      currentVideo.play().catch(() => {
-        // Auto-play failed, user interaction needed
-      });
+      currentVideo.play().catch(() => {});
       
-      // Track view when video starts playing
       const video = videos[currentIndex];
       if (video && !videoStates.get(video.id)?.viewed) {
         handleViewIncrement(video.id);
       }
     }
 
-    // Pause other videos
     videoRefs.current.forEach((video, index) => {
       if (video && index !== currentIndex) {
         video.pause();
@@ -67,8 +65,7 @@ const VideosPage = () => {
     setVideos(result.data);
     setHasMore(result.hasMore);
     
-    // Load interaction states
-    await loadInteractionStates(result.data);
+    loadInteractionStates(result.data);
     
     setLoading(false);
   };
@@ -107,7 +104,6 @@ const VideosPage = () => {
     await incrementVideoViews(videoId);
     setVideoStates(prev => new Map(prev).set(videoId, { ...prev.get(videoId)!, viewed: true }));
     
-    // Update local count
     setVideos(prev => prev.map(v => 
       v.id === videoId ? { ...v, views_count: (v.views_count || 0) + 1 } : v
     ));
@@ -117,13 +113,11 @@ const VideosPage = () => {
     const state = videoStates.get(videoId);
     const isLiked = state?.liked || false;
 
-    // Optimistic update
     setVideos(prev => prev.map(v => 
       v.id === videoId ? { ...v, likes_count: isLiked ? Math.max(0, v.likes_count - 1) : v.likes_count + 1 } : v
     ));
     setVideoStates(prev => new Map(prev).set(videoId, { ...state!, liked: !isLiked }));
 
-    // Actual API call
     if (isLiked) {
       await unlikeVideo(videoId);
     } else {
@@ -135,13 +129,11 @@ const VideosPage = () => {
     const state = videoStates.get(videoId);
     const isReposted = state?.reposted || false;
 
-    // Optimistic update
     setVideos(prev => prev.map(v => 
       v.id === videoId ? { ...v, reposts_count: isReposted ? Math.max(0, (v.reposts_count || 0) - 1) : (v.reposts_count || 0) + 1 } : v
     ));
     setVideoStates(prev => new Map(prev).set(videoId, { ...state!, reposted: !isReposted }));
 
-    // Actual API call
     if (isReposted) {
       await unrepostVideo(videoId);
     } else {
@@ -155,7 +147,6 @@ const VideosPage = () => {
     
     setVideoStates(prev => new Map(prev).set(videoId, { ...state!, bookmarked: !isBookmarked }));
     
-    // Store in localStorage
     const bookmarks = JSON.parse(localStorage.getItem('bookmarkedVideos') || '[]');
     if (isBookmarked) {
       localStorage.setItem('bookmarkedVideos', JSON.stringify(bookmarks.filter((id: string) => id !== videoId)));
@@ -164,27 +155,49 @@ const VideosPage = () => {
     }
   };
 
-  const handleViewComments = async (videoId: string) => {
+  const handleToggleComments = async (videoId: string) => {
     if (commentsVisible === videoId) {
       setCommentsVisible(null);
       return;
     }
 
+    setLoadingComments(true);
+    setCommentsVisible(videoId);
+    
     const videoComments = await getVideoComments(videoId);
     setComments(prev => new Map(prev).set(videoId, videoComments));
-    setCommentsVisible(videoId);
+    setLoadingComments(false);
   };
 
   const handleAddComment = async (videoId: string) => {
     if (!commentText.trim()) return;
 
-    const result = await addVideoComment(videoId, commentText);
+    const tempComment = {
+      id: `temp-${Date.now()}`,
+      content: commentText,
+      created_at: new Date().toISOString(),
+      user_id: user?.id,
+      user_profiles: {
+        username: user?.username,
+        avatar_url: user?.avatar,
+      }
+    };
+
+    // Optimistic update
+    setComments(prev => new Map(prev).set(videoId, [...(prev.get(videoId) || []), tempComment]));
+    setVideos(prev => prev.map(v => 
+      v.id === videoId ? { ...v, comments_count: v.comments_count + 1 } : v
+    ));
+    setCommentText('');
+
+    const result = await addVideoComment(videoId, tempComment.content);
+    
     if (result.data) {
-      setComments(prev => new Map(prev).set(videoId, [...(prev.get(videoId) || []), result.data]));
-      setVideos(prev => prev.map(v => 
-        v.id === videoId ? { ...v, comments_count: v.comments_count + 1 } : v
-      ));
-      setCommentText('');
+      setComments(prev => {
+        const videoComments = prev.get(videoId) || [];
+        const filtered = videoComments.filter(c => c.id !== tempComment.id);
+        return new Map(prev).set(videoId, [...filtered, result.data]);
+      });
     }
   };
 
@@ -192,45 +205,10 @@ const VideosPage = () => {
     const shareUrl = `${window.location.origin}/video/${video.id}`;
     const shareText = `${video.title}\n\n${video.description || ''}`;
     
-    if (platform === 'facebook') {
-      window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}`, '_blank');
-      await incrementVideoShares(video.id);
-      setVideos(prev => prev.map(v => 
-        v.id === video.id ? { ...v, shares_count: (v.shares_count || 0) + 1 } : v
-      ));
-      setShareMenuId(null);
-    } else if (platform === 'twitter') {
-      window.open(`https://twitter.com/intent/tweet?url=${encodeURIComponent(shareUrl)}&text=${encodeURIComponent(video.title)}`, '_blank');
-      await incrementVideoShares(video.id);
-      setVideos(prev => prev.map(v => 
-        v.id === video.id ? { ...v, shares_count: (v.shares_count || 0) + 1 } : v
-      ));
-      setShareMenuId(null);
-    } else if (platform === 'linkedin') {
-      window.open(`https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(shareUrl)}`, '_blank');
-      await incrementVideoShares(video.id);
-      setVideos(prev => prev.map(v => 
-        v.id === video.id ? { ...v, shares_count: (v.shares_count || 0) + 1 } : v
-      ));
-      setShareMenuId(null);
-    } else if (platform === 'whatsapp') {
-      window.open(`https://wa.me/?text=${encodeURIComponent(shareText + ' ' + shareUrl)}`, '_blank');
-      await incrementVideoShares(video.id);
-      setVideos(prev => prev.map(v => 
-        v.id === video.id ? { ...v, shares_count: (v.shares_count || 0) + 1 } : v
-      ));
-      setShareMenuId(null);
-    } else if (platform === 'email') {
-      window.location.href = `mailto:?subject=${encodeURIComponent(video.title)}&body=${encodeURIComponent(shareText + '\n\nWatch video: ' + shareUrl)}`;
-      await incrementVideoShares(video.id);
-      setVideos(prev => prev.map(v => 
-        v.id === video.id ? { ...v, shares_count: (v.shares_count || 0) + 1 } : v
-      ));
-      setShareMenuId(null);
-    } else if (platform === 'copy') {
+    if (platform === 'copy') {
       try {
         await navigator.clipboard.writeText(shareUrl);
-        alert('✅ Link copied to clipboard!');
+        alert('✅ Link copied!');
         await incrementVideoShares(video.id);
         setVideos(prev => prev.map(v => 
           v.id === video.id ? { ...v, shares_count: (v.shares_count || 0) + 1 } : v
@@ -239,23 +217,20 @@ const VideosPage = () => {
       } catch (err) {
         alert('Failed to copy link');
       }
-    } else {
-      if (navigator.share) {
-        try {
-          await navigator.share({
-            title: video.title,
-            text: video.description || video.title,
-            url: shareUrl,
-          });
-          await incrementVideoShares(video.id);
-          setVideos(prev => prev.map(v => 
-            v.id === video.id ? { ...v, shares_count: (v.shares_count || 0) + 1 } : v
-          ));
-        } catch (err) {
-          console.log('Share cancelled');
-        }
-      } else {
-        setShareMenuId(video.id);
+    } else if (platform) {
+      const urls: { [key: string]: string } = {
+        facebook: `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}`,
+        twitter: `https://twitter.com/intent/tweet?url=${encodeURIComponent(shareUrl)}&text=${encodeURIComponent(video.title)}`,
+        whatsapp: `https://wa.me/?text=${encodeURIComponent(shareText + ' ' + shareUrl)}`,
+      };
+      
+      if (urls[platform]) {
+        window.open(urls[platform], '_blank');
+        await incrementVideoShares(video.id);
+        setVideos(prev => prev.map(v => 
+          v.id === video.id ? { ...v, shares_count: (v.shares_count || 0) + 1 } : v
+        ));
+        setShareMenuId(null);
       }
     }
   };
@@ -270,7 +245,6 @@ const VideosPage = () => {
       setCurrentIndex(newIndex);
     }
 
-    // Load more when near end
     if (scrollPosition + videoHeight * 2 >= container.scrollHeight && hasMore && !loadingMore) {
       loadMore();
     }
@@ -321,6 +295,7 @@ const VideosPage = () => {
       {videos.map((video, index) => {
         const state = videoStates.get(video.id) || { liked: false, reposted: false, viewed: false, bookmarked: false };
         const videoComments = comments.get(video.id) || [];
+        const isCommentsOpen = commentsVisible === video.id;
         
         return (
           <div
@@ -352,7 +327,6 @@ const VideosPage = () => {
 
             {/* Right Side Actions */}
             <div className="absolute right-4 bottom-24 z-10 flex flex-col gap-5">
-              {/* Like */}
               <button
                 onClick={() => handleLike(video.id)}
                 className="flex flex-col items-center gap-1"
@@ -365,20 +339,18 @@ const VideosPage = () => {
                 <span className="text-white text-xs font-bold drop-shadow-lg">{video.likes_count || 0}</span>
               </button>
 
-              {/* Comments */}
               <button 
-                onClick={() => handleViewComments(video.id)}
+                onClick={() => handleToggleComments(video.id)}
                 className="flex flex-col items-center gap-1"
               >
                 <div className={`w-14 h-14 rounded-full flex items-center justify-center ${
-                  commentsVisible === video.id ? 'bg-blue-500' : 'bg-white/20 backdrop-blur-sm'
+                  isCommentsOpen ? 'bg-blue-500' : 'bg-white/20 backdrop-blur-sm'
                 } hover:scale-110 transition-all shadow-lg`}>
                   <MessageCircle className="w-7 h-7 text-white" />
                 </div>
                 <span className="text-white text-xs font-bold drop-shadow-lg">{video.comments_count || 0}</span>
               </button>
 
-              {/* Repost */}
               <button
                 onClick={() => handleRepost(video.id)}
                 className="flex flex-col items-center gap-1"
@@ -391,7 +363,6 @@ const VideosPage = () => {
                 <span className="text-white text-xs font-bold drop-shadow-lg">{video.reposts_count || 0}</span>
               </button>
 
-              {/* Bookmark */}
               <button
                 onClick={() => handleBookmark(video.id)}
                 className="flex flex-col items-center gap-1"
@@ -403,10 +374,9 @@ const VideosPage = () => {
                 </div>
               </button>
 
-              {/* Share */}
               <div className="relative">
                 <button
-                  onClick={() => handleShare(video)}
+                  onClick={() => setShareMenuId(shareMenuId === video.id ? null : video.id)}
                   className="flex flex-col items-center gap-1"
                 >
                   <div className="w-14 h-14 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center hover:scale-110 transition-all shadow-lg">
@@ -415,43 +385,26 @@ const VideosPage = () => {
                   <span className="text-white text-xs font-bold drop-shadow-lg">{video.shares_count || 0}</span>
                 </button>
 
-                {/* Share Menu */}
                 {shareMenuId === video.id && (
                   <>
-                    <div 
-                      className="fixed inset-0 z-30" 
-                      onClick={() => setShareMenuId(null)}
-                    />
-                    <div className="absolute bottom-full right-0 mb-2 bg-white rounded-2xl shadow-2xl py-2 z-40 min-w-[220px]">
-                      <div className="px-4 py-2 border-b border-gray-100">
-                        <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">Share Video</p>
-                      </div>
-                      <button onClick={() => handleShare(video, 'facebook')} className="flex items-center gap-3 px-4 py-3 text-sm text-gray-700 hover:bg-blue-50 w-full transition-colors">
-                        <Facebook className="w-5 h-5 text-blue-600" />
-                        <span className="font-medium">Facebook</span>
+                    <div className="fixed inset-0 z-30" onClick={() => setShareMenuId(null)} />
+                    <div className="absolute bottom-full right-0 mb-2 bg-white rounded-2xl shadow-2xl py-2 z-40 min-w-[200px]">
+                      <button onClick={() => handleShare(video, 'copy')} className="flex items-center gap-3 px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 w-full">
+                        <Copy className="w-5 h-5" />
+                        <span className="font-medium">Copy Link</span>
                       </button>
-                      <button onClick={() => handleShare(video, 'twitter')} className="flex items-center gap-3 px-4 py-3 text-sm text-gray-700 hover:bg-sky-50 w-full transition-colors">
+                      <button onClick={() => handleShare(video, 'twitter')} className="flex items-center gap-3 px-4 py-3 text-sm text-gray-700 hover:bg-sky-50 w-full">
                         <Twitter className="w-5 h-5 text-sky-500" />
                         <span className="font-medium">Twitter</span>
                       </button>
-                      <button onClick={() => handleShare(video, 'linkedin')} className="flex items-center gap-3 px-4 py-3 text-sm text-gray-700 hover:bg-blue-50 w-full transition-colors">
-                        <Linkedin className="w-5 h-5 text-blue-700" />
-                        <span className="font-medium">LinkedIn</span>
+                      <button onClick={() => handleShare(video, 'facebook')} className="flex items-center gap-3 px-4 py-3 text-sm text-gray-700 hover:bg-blue-50 w-full">
+                        <Facebook className="w-5 h-5 text-blue-600" />
+                        <span className="font-medium">Facebook</span>
                       </button>
-                      <button onClick={() => handleShare(video, 'whatsapp')} className="flex items-center gap-3 px-4 py-3 text-sm text-gray-700 hover:bg-green-50 w-full transition-colors">
+                      <button onClick={() => handleShare(video, 'whatsapp')} className="flex items-center gap-3 px-4 py-3 text-sm text-gray-700 hover:bg-green-50 w-full">
                         <MessageCircle className="w-5 h-5 text-green-600" />
                         <span className="font-medium">WhatsApp</span>
                       </button>
-                      <button onClick={() => handleShare(video, 'email')} className="flex items-center gap-3 px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 w-full transition-colors">
-                        <Mail className="w-5 h-5 text-gray-600" />
-                        <span className="font-medium">Email</span>
-                      </button>
-                      <div className="border-t border-gray-100 mt-1 pt-1">
-                        <button onClick={() => handleShare(video, 'copy')} className="flex items-center gap-3 px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 w-full transition-colors">
-                          <Copy className="w-5 h-5 text-gray-600" />
-                          <span className="font-medium">Copy Link</span>
-                        </button>
-                      </div>
                     </div>
                   </>
                 )}
@@ -460,18 +413,13 @@ const VideosPage = () => {
 
             {/* Bottom Info */}
             <div className="absolute bottom-0 left-0 right-20 p-6 text-white z-10">
-              {/* Author */}
               <Link
                 to={`/profile/${video.user_id}`}
                 className="flex items-center gap-3 mb-3"
               >
                 <div className="w-12 h-12 rounded-full bg-gray-300 flex items-center justify-center overflow-hidden ring-2 ring-white shadow-lg">
                   {video.user_profiles?.avatar_url ? (
-                    <img
-                      src={video.user_profiles.avatar_url}
-                      alt=""
-                      className="w-full h-full object-cover"
-                    />
+                    <img src={video.user_profiles.avatar_url} alt="" className="w-full h-full object-cover" />
                   ) : (
                     <User className="w-6 h-6 text-gray-500" />
                   )}
@@ -482,7 +430,6 @@ const VideosPage = () => {
                 </div>
               </Link>
 
-              {/* Title & Description */}
               <h2 className="text-lg font-bold mb-2 line-clamp-2 drop-shadow-lg">{video.title}</h2>
               {video.description && (
                 <div className="text-sm text-white/95 mb-2 line-clamp-3 drop-shadow-lg">
@@ -490,7 +437,6 @@ const VideosPage = () => {
                 </div>
               )}
 
-              {/* Stats */}
               <div className="flex items-center gap-3 text-sm text-white/90 drop-shadow-lg">
                 <span>{video.views_count || 0} views</span>
                 <span>•</span>
@@ -498,86 +444,109 @@ const VideosPage = () => {
               </div>
             </div>
 
-            {/* Comments Panel */}
-            {commentsVisible === video.id && (
-              <div className="absolute bottom-0 left-0 right-0 max-h-[60vh] bg-white rounded-t-3xl z-20 overflow-hidden flex flex-col">
-                <div className="flex items-center justify-between p-4 border-b border-gray-200">
-                  <h3 className="text-lg font-bold text-gray-900">
-                    Comments ({videoComments.length})
-                  </h3>
-                  <button
-                    onClick={() => setCommentsVisible(null)}
-                    className="p-2 hover:bg-gray-100 rounded-full transition-colors"
-                  >
-                    <X className="w-5 h-5 text-gray-600" />
-                  </button>
-                </div>
-
-                <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                  {videoComments.length === 0 ? (
-                    <div className="text-center py-8">
-                      <MessageCircle className="w-12 h-12 text-gray-300 mx-auto mb-2" />
-                      <p className="text-sm text-gray-500">No comments yet. Be the first!</p>
-                    </div>
-                  ) : (
-                    videoComments.map((comment) => (
-                      <div key={comment.id} className="flex gap-3">
-                        <Link to={`/profile/${comment.user_id}`} className="flex-shrink-0">
-                          <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center overflow-hidden">
-                            {comment.user_profiles?.avatar_url ? (
-                              <img src={comment.user_profiles.avatar_url} alt="" className="w-full h-full object-cover" />
-                            ) : (
-                              <User className="w-5 h-5 text-gray-500" />
-                            )}
-                          </div>
-                        </Link>
-                        <div className="flex-1 bg-gray-100 rounded-2xl px-4 py-3">
-                          <div className="flex items-center gap-2 mb-1">
-                            <Link to={`/profile/${comment.user_id}`} className="font-semibold text-gray-900 text-sm hover:underline">
-                              {comment.user_profiles?.username || 'Unknown'}
-                            </Link>
-                            <span className="text-xs text-gray-500">{getTimeAgo(comment.created_at)}</span>
-                          </div>
-                          <div className="text-sm text-gray-900">
-                            <ClickableText text={comment.content} />
-                          </div>
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-
-                <div className="p-4 border-t border-gray-200 bg-white">
-                  <div className="flex gap-3">
-                    <input
-                      type="text"
-                      value={commentText}
-                      onChange={(e) => setCommentText(e.target.value)}
-                      onKeyPress={(e) => {
-                        if (e.key === 'Enter' && !e.shiftKey) {
-                          e.preventDefault();
-                          handleAddComment(video.id);
-                        }
-                      }}
-                      placeholder="Add a comment..."
-                      className="flex-1 px-4 py-3 border border-gray-300 rounded-full text-sm focus:outline-none focus:border-primary"
-                    />
+            {/* TikTok-Style Comments Panel (Slide Up) */}
+            {isCommentsOpen && (
+              <>
+                <div 
+                  className="absolute inset-0 bg-black/50 z-30"
+                  onClick={() => setCommentsVisible(null)}
+                />
+                
+                <div className="absolute bottom-0 left-0 right-0 max-h-[70vh] bg-white rounded-t-3xl z-40 overflow-hidden flex flex-col animate-slide-up">
+                  {/* Header */}
+                  <div className="flex items-center justify-between p-4 border-b border-gray-200 bg-white sticky top-0 z-10">
+                    <h3 className="text-lg font-bold text-gray-900">
+                      {videoComments.length} {videoComments.length === 1 ? 'Comment' : 'Comments'}
+                    </h3>
                     <button
-                      onClick={() => handleAddComment(video.id)}
-                      disabled={!commentText.trim()}
-                      className="p-3 bg-primary text-white rounded-full hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      onClick={() => setCommentsVisible(null)}
+                      className="p-2 hover:bg-gray-100 rounded-full transition-colors"
                     >
-                      <Send className="w-5 h-5" />
+                      <ChevronUp className="w-5 h-5 text-gray-600" />
                     </button>
                   </div>
+
+                  {/* Comments List */}
+                  <div className="flex-1 overflow-y-auto p-4">
+                    {loadingComments ? (
+                      <div className="flex items-center justify-center py-12">
+                        <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                      </div>
+                    ) : videoComments.length === 0 ? (
+                      <div className="text-center py-12">
+                        <MessageCircle className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                        <p className="text-sm text-gray-500 font-medium">No comments yet</p>
+                        <p className="text-xs text-gray-400 mt-1">Be the first to comment!</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        {videoComments.map((comment) => (
+                          <div key={comment.id} className="flex gap-3">
+                            <Link to={`/profile/${comment.user_id}`} className="flex-shrink-0">
+                              <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center overflow-hidden">
+                                {comment.user_profiles?.avatar_url ? (
+                                  <img src={comment.user_profiles.avatar_url} alt="" className="w-full h-full object-cover" />
+                                ) : (
+                                  <User className="w-5 h-5 text-gray-500" />
+                                )}
+                              </div>
+                            </Link>
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-1">
+                                <Link to={`/profile/${comment.user_id}`} className="font-semibold text-gray-900 text-sm hover:underline">
+                                  {comment.user_profiles?.username || 'Unknown'}
+                                </Link>
+                                <span className="text-xs text-gray-500">{getTimeAgo(comment.created_at)}</span>
+                              </div>
+                              <div className="text-sm text-gray-900 leading-relaxed">
+                                <ClickableText text={comment.content} />
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Comment Input (Fixed at bottom) */}
+                  <div className="p-4 border-t border-gray-200 bg-white sticky bottom-0">
+                    <div className="flex gap-3 items-center">
+                      <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center overflow-hidden flex-shrink-0">
+                        {user?.avatar ? (
+                          <img src={user.avatar} alt="" className="w-full h-full object-cover" />
+                        ) : (
+                          <User className="w-5 h-5 text-gray-500" />
+                        )}
+                      </div>
+                      <input
+                        type="text"
+                        value={commentText}
+                        onChange={(e) => setCommentText(e.target.value)}
+                        onKeyPress={(e) => {
+                          if (e.key === 'Enter' && !e.shiftKey) {
+                            e.preventDefault();
+                            handleAddComment(video.id);
+                          }
+                        }}
+                        placeholder="Add a comment..."
+                        className="flex-1 px-4 py-3 border border-gray-300 rounded-full text-sm focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                      />
+                      <button
+                        onClick={() => handleAddComment(video.id)}
+                        disabled={!commentText.trim()}
+                        className="p-3 bg-primary text-white rounded-full hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-lg"
+                      >
+                        <Send className="w-5 h-5" />
+                      </button>
+                    </div>
+                  </div>
                 </div>
-              </div>
+              </>
             )}
           </div>
         );
       })}
 
-      {/* Loading More */}
       {loadingMore && (
         <div className="h-screen snap-start bg-black flex flex-col items-center justify-center">
           <Loader2 className="w-8 h-8 animate-spin text-white mb-2" />
@@ -585,7 +554,6 @@ const VideosPage = () => {
         </div>
       )}
 
-      {/* End of videos */}
       {!hasMore && videos.length > 0 && (
         <div className="h-screen snap-start bg-black flex flex-col items-center justify-center">
           <TrendingUp className="w-12 h-12 text-gray-500 mb-4" />
@@ -596,5 +564,8 @@ const VideosPage = () => {
     </div>
   );
 };
+
+// Import useAuth hook
+import { useAuth } from '../stores/authStore';
 
 export default VideosPage;

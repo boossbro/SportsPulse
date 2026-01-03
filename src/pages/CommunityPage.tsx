@@ -12,7 +12,7 @@ import {
   getCommunityComments,
   addCommunityComment
 } from '../lib/api';
-import { Loader2, Image as ImageIcon, Video, Heart, MessageCircle, Share2, User, Twitter, Copy, X, Repeat, BarChart2, Send, Bookmark, TrendingUp, Smile, Hash } from 'lucide-react';
+import { Loader2, Image as ImageIcon, Video, Heart, MessageCircle, Share2, User, Twitter, Copy, X, Repeat, Send, Bookmark, TrendingUp, Smile, Hash, CornerDownRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import AdPlacement from '../components/ads/AdPlacement';
 import { ClickableText } from '../components/common/ClickableText';
@@ -31,10 +31,10 @@ const CommunityPage = () => {
   const [shareMenuId, setShareMenuId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'foryou' | 'following'>('foryou');
   const [postStates, setPostStates] = useState<Map<string, { liked: boolean; reposted: boolean; bookmarked: boolean }>>(new Map());
-  const [commentingOnPost, setCommentingOnPost] = useState<string | null>(null);
   const [commentText, setCommentText] = useState('');
   const [postComments, setPostComments] = useState<Map<string, any[]>>(new Map());
   const [viewingComments, setViewingComments] = useState<string | null>(null);
+  const [loadingComments, setLoadingComments] = useState(false);
   const observerTarget = useRef<HTMLDivElement>(null);
 
   // Lazy loading with IntersectionObserver
@@ -67,12 +67,13 @@ const CommunityPage = () => {
     setLoading(true);
     setPage(1);
     
-    const result = await getCommunityPosts({ page: 1, limit: 10 });
+    // Reduced to 5 posts for faster initial load
+    const result = await getCommunityPosts({ page: 1, limit: 5 });
     setPosts(result.data);
     setHasMore(result.hasMore);
     
-    // Load interaction states for first batch
-    await loadInteractionStates(result.data);
+    // Load interaction states in background (non-blocking)
+    loadInteractionStates(result.data);
     
     setLoading(false);
   };
@@ -83,13 +84,14 @@ const CommunityPage = () => {
     setLoadingMore(true);
     const nextPage = page + 1;
     
-    const result = await getCommunityPosts({ page: nextPage, limit: 10 });
+    // Load 5 posts per batch for faster loading
+    const result = await getCommunityPosts({ page: nextPage, limit: 5 });
     setPosts(prev => [...prev, ...result.data]);
     setHasMore(result.hasMore);
     setPage(nextPage);
     
-    // Load interaction states for new posts
-    await loadInteractionStates(result.data);
+    // Load interaction states in background
+    loadInteractionStates(result.data);
     
     setLoadingMore(false);
   }, [page, hasMore, loadingMore]);
@@ -98,6 +100,7 @@ const CommunityPage = () => {
     const states = new Map(postStates);
     for (const post of postsToLoad) {
       if (!states.has(post.id)) {
+        // Load states in parallel for speed
         const [liked, reposted] = await Promise.all([
           checkIsCommunityPostLiked(post.id),
           checkIsCommunityPostReposted(post.id),
@@ -112,7 +115,6 @@ const CommunityPage = () => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Validate file size (10MB limit)
     if (file.size > 10 * 1024 * 1024) {
       alert('File size must be less than 10MB');
       return;
@@ -191,7 +193,6 @@ const CommunityPage = () => {
     
     setPostStates(prev => new Map(prev).set(postId, { ...state!, bookmarked: !isBookmarked }));
     
-    // Store in localStorage
     const bookmarks = JSON.parse(localStorage.getItem('bookmarkedPosts') || '[]');
     if (isBookmarked) {
       localStorage.setItem('bookmarkedPosts', JSON.stringify(bookmarks.filter((id: string) => id !== postId)));
@@ -206,22 +207,43 @@ const CommunityPage = () => {
       return;
     }
 
+    setLoadingComments(true);
+    setViewingComments(postId);
+    
     const comments = await getCommunityComments(postId);
     setPostComments(prev => new Map(prev).set(postId, comments));
-    setViewingComments(postId);
+    setLoadingComments(false);
   };
 
   const handleAddComment = async (postId: string) => {
     if (!commentText.trim()) return;
 
-    const result = await addCommunityComment(postId, commentText);
+    const tempComment = {
+      id: `temp-${Date.now()}`,
+      content: commentText,
+      created_at: new Date().toISOString(),
+      user_profiles: {
+        username: user?.username,
+        avatar_url: user?.avatar,
+      }
+    };
+
+    // Optimistic update
+    setPostComments(prev => new Map(prev).set(postId, [...(prev.get(postId) || []), tempComment]));
+    setPosts(prev => prev.map(p => 
+      p.id === postId ? { ...p, comments_count: p.comments_count + 1 } : p
+    ));
+    setCommentText('');
+
+    const result = await addCommunityComment(postId, tempComment.content);
+    
     if (result.data) {
-      setPostComments(prev => new Map(prev).set(postId, [...(prev.get(postId) || []), result.data]));
-      setPosts(prev => prev.map(p => 
-        p.id === postId ? { ...p, comments_count: p.comments_count + 1 } : p
-      ));
-      setCommentText('');
-      setCommentingOnPost(null);
+      // Replace temp with real comment
+      setPostComments(prev => {
+        const comments = prev.get(postId) || [];
+        const filtered = comments.filter(c => c.id !== tempComment.id);
+        return new Map(prev).set(postId, [...filtered, result.data]);
+      });
     }
   };
 
@@ -380,15 +402,11 @@ const CommunityPage = () => {
         </form>
       </div>
 
-      {/* Ad Placement */}
-      <div className="p-4">
-        <AdPlacement provider="adsense" format="horizontal" />
-      </div>
-
       {/* Posts Feed */}
       {loading ? (
-        <div className="flex items-center justify-center py-16">
-          <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        <div className="flex flex-col items-center justify-center py-16">
+          <Loader2 className="w-8 h-8 animate-spin text-primary mb-2" />
+          <p className="text-sm text-gray-500">Loading posts...</p>
         </div>
       ) : posts.length === 0 ? (
         <div className="text-center py-16">
@@ -496,12 +514,68 @@ const CommunityPage = () => {
                         </div>
                       </div>
 
-                      {/* Comments Section */}
+                      {/* Thread-style Comments Section */}
                       {viewingComments === post.id && (
-                        <div className="mt-4 pt-4 border-t border-gray-100">
-                          {/* Comment Input */}
-                          <div className="flex gap-2 mb-4">
-                            <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center overflow-hidden">
+                        <div className="mt-4 pt-4 border-t border-blue-100 bg-blue-50/30 rounded-lg p-3">
+                          {/* Conversation Header */}
+                          <div className="flex items-center gap-2 mb-3 px-2">
+                            <CornerDownRight className="w-4 h-4 text-blue-500" />
+                            <span className="text-sm font-semibold text-gray-700">
+                              {comments.length} {comments.length === 1 ? 'reply' : 'replies'}
+                            </span>
+                          </div>
+
+                          {/* Thread */}
+                          <div className="space-y-3 mb-3">
+                            {loadingComments ? (
+                              <div className="flex items-center justify-center py-4">
+                                <Loader2 className="w-5 h-5 animate-spin text-blue-500" />
+                              </div>
+                            ) : comments.length === 0 ? (
+                              <div className="text-center py-4">
+                                <p className="text-sm text-gray-500">No replies yet. Start the conversation!</p>
+                              </div>
+                            ) : (
+                              comments.map((comment, idx) => (
+                                <div key={comment.id} className="flex gap-2">
+                                  {/* Connection Line */}
+                                  <div className="flex flex-col items-center">
+                                    <Link to={`/profile/${comment.user_id}`} className="flex-shrink-0">
+                                      <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center overflow-hidden ring-2 ring-white">
+                                        {comment.user_profiles?.avatar_url ? (
+                                          <img src={comment.user_profiles.avatar_url} alt="" className="w-full h-full object-cover" />
+                                        ) : (
+                                          <User className="w-4 h-4 text-gray-500" />
+                                        )}
+                                      </div>
+                                    </Link>
+                                    {idx < comments.length - 1 && (
+                                      <div className="w-0.5 flex-1 bg-blue-200 mt-1" />
+                                    )}
+                                  </div>
+
+                                  {/* Comment Bubble */}
+                                  <div className="flex-1 min-w-0">
+                                    <div className="bg-white rounded-2xl px-3 py-2 shadow-sm border border-gray-100">
+                                      <div className="flex items-center gap-2 mb-1">
+                                        <Link to={`/profile/${comment.user_id}`} className="text-sm font-bold text-gray-900 hover:underline">
+                                          {comment.user_profiles?.username || 'Unknown'}
+                                        </Link>
+                                        <span className="text-xs text-gray-500">{getTimeAgo(comment.created_at)}</span>
+                                      </div>
+                                      <div className="text-sm text-gray-900 leading-relaxed">
+                                        <ClickableText text={comment.content} />
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              ))
+                            )}
+                          </div>
+
+                          {/* Reply Input */}
+                          <div className="flex gap-2 items-end">
+                            <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center overflow-hidden flex-shrink-0">
                               {user?.avatar ? (
                                 <img src={user.avatar} alt="" className="w-full h-full object-cover" />
                               ) : (
@@ -511,56 +585,25 @@ const CommunityPage = () => {
                             <div className="flex-1 flex gap-2">
                               <input
                                 type="text"
-                                value={commentingOnPost === post.id ? commentText : ''}
-                                onChange={(e) => {
-                                  setCommentingOnPost(post.id);
-                                  setCommentText(e.target.value);
-                                }}
+                                value={commentText}
+                                onChange={(e) => setCommentText(e.target.value)}
                                 onKeyPress={(e) => {
                                   if (e.key === 'Enter' && !e.shiftKey) {
                                     e.preventDefault();
                                     handleAddComment(post.id);
                                   }
                                 }}
-                                placeholder="Write a reply..."
-                                className="flex-1 px-3 py-2 border border-gray-300 rounded-full text-sm focus:outline-none focus:border-primary"
+                                placeholder="Write your reply..."
+                                className="flex-1 px-3 py-2 bg-white border border-blue-200 rounded-full text-sm focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
                               />
                               <button
                                 onClick={() => handleAddComment(post.id)}
                                 disabled={!commentText.trim()}
-                                className="p-2 bg-primary text-white rounded-full hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                className="p-2 bg-blue-500 text-white rounded-full hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
                               >
                                 <Send className="w-4 h-4" />
                               </button>
                             </div>
-                          </div>
-
-                          {/* Comments List */}
-                          <div className="space-y-3">
-                            {comments.map((comment) => (
-                              <div key={comment.id} className="flex gap-2">
-                                <Link to={`/profile/${comment.user_id}`} className="flex-shrink-0">
-                                  <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center overflow-hidden">
-                                    {comment.user_profiles?.avatar_url ? (
-                                      <img src={comment.user_profiles.avatar_url} alt="" className="w-full h-full object-cover" />
-                                    ) : (
-                                      <User className="w-4 h-4 text-gray-500" />
-                                    )}
-                                  </div>
-                                </Link>
-                                <div className="flex-1 bg-gray-100 rounded-2xl px-3 py-2">
-                                  <div className="flex items-center gap-2 mb-1">
-                                    <Link to={`/profile/${comment.user_id}`} className="text-sm font-semibold text-gray-900 hover:underline">
-                                      {comment.user_profiles?.username || 'Unknown'}
-                                    </Link>
-                                    <span className="text-xs text-gray-500">{getTimeAgo(comment.created_at)}</span>
-                                  </div>
-                                  <div className="text-sm text-gray-900">
-                                    <ClickableText text={comment.content} />
-                                  </div>
-                                </div>
-                              </div>
-                            ))}
                           </div>
                         </div>
                       )}
