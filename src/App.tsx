@@ -1,3 +1,4 @@
+import { hideSplash } from "./utils/splash";
 import { enableEdgeToEdge } from "./utils/edgeToEdge";
 import { useAndroidGestureBack } from "./hooks/useAndroidGestureBack";
 import { useDoubleBackExit } from "./hooks/useDoubleBackExit";
@@ -45,6 +46,7 @@ const ErrorFallback = ({ error, resetErrorBoundary }: any) => (
 );
 
 function App() {
+  hideSplash();
   enableEdgeToEdge();
   enableEdgeToEdge();
   useAndroidGestureBack();
