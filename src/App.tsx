@@ -1,3 +1,4 @@
+import { useDoubleBackExit } from "./hooks/useDoubleBackExit";
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import HomePage from './pages/HomePage';
