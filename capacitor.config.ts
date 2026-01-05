@@ -1,7 +1,7 @@
 import { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'com.boossbro.sportspulse',
+  appId: 'com.sportspulse.app',
   appName: 'SportsPulse',
   webDir: 'dist',
   bundledWebRuntime: false

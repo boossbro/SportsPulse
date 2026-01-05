@@ -1,27 +1,10 @@
 apply plugin: 'com.android.application'
 
 android {
-    compileOptions {
-
-        sourceCompatibility JavaVersion.VERSION_17
-
-        targetCompatibility JavaVersion.VERSION_17
-
-    }
-
-    java {
-
-        toolchain {
-
-            languageVersion = JavaLanguageVersion.of(21)
-
-        }
-
-    }
-    namespace = "com.yourdomain.sportspulse"
+    namespace = "com.sportspulse.app"
     compileSdk = rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "com.yourdomain.sportspulse"
+        applicationId "com.sportspulse.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
