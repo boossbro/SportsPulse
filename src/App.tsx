@@ -1,3 +1,4 @@
+import { enableEdgeToEdge } from "./utils/edgeToEdge";
 import { useAndroidGestureBack } from "./hooks/useAndroidGestureBack";
 import { useDoubleBackExit } from "./hooks/useDoubleBackExit";
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
@@ -44,6 +45,8 @@ const ErrorFallback = ({ error, resetErrorBoundary }: any) => (
 );
 
 function App() {
+  enableEdgeToEdge();
+  enableEdgeToEdge();
   useAndroidGestureBack();
   const { isOpen, toggle } = useSidebar();
 
