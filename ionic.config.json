@@ -1,0 +1,7 @@
+{
+  "name": "SportsPulse",
+  "type": "react",
+  "integrations": {
+    "capacitor": {}
+  }
+}

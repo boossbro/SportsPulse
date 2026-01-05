@@ -1,9 +1,10 @@
-import type { CapacitorConfig } from '@capacitor/cli';
+import { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'com.yourdomain.sportspulse',
+  appId: 'com.boossbro.sportspulse',
   appName: 'SportsPulse',
-  webDir: 'dist'
+  webDir: 'dist',
+  bundledWebRuntime: false
 };
 
 export default config;
