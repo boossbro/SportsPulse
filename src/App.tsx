@@ -1,3 +1,4 @@
+import { useAndroidGestureBack } from "./hooks/useAndroidGestureBack";
 import { useDoubleBackExit } from "./hooks/useDoubleBackExit";
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -43,6 +44,7 @@ const ErrorFallback = ({ error, resetErrorBoundary }: any) => (
 );
 
 function App() {
+  useAndroidGestureBack();
   const { isOpen, toggle } = useSidebar();
 
   return (
