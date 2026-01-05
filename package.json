@@ -30,6 +30,7 @@
     "@capacitor/share": "^8.0.0",
     "@capacitor/splash-screen": "^8.0.0",
     "@capacitor/status-bar": "^8.0.0",
+    "@capacitor/toast": "^8.0.0",
     "@capawesome/capacitor-badge": "^8.0.0",
     "@google/generative-ai": "^0.24.1",
     "@hookform/resolvers": "^3.9.0",
