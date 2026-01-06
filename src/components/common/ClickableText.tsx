@@ -42,12 +42,12 @@ export const ClickableText = ({ text, className = '' }: ClickableTextProps) => {
           </Link>
         );
       } else if (matchedText.startsWith('@')) {
-        // Mention
+        // Mention - use /profile/ instead of /user/
         const username = matchedText.substring(1);
         parts.push(
           <Link
             key={`mention-${match.index}`}
-            to={`/user/${username.toLowerCase()}`}
+            to={`/profile/${username.toLowerCase()}`}
             className="text-blue-600 hover:underline font-semibold"
             onClick={(e) => e.stopPropagation()}
           >

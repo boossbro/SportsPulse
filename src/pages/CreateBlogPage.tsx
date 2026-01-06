@@ -1,4 +1,3 @@
-import { FilePicker } from '@capawesome/capacitor-file-picker';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../stores/authStore';
@@ -305,43 +304,3 @@ const CreateBlogPage = () => {
 };
 
 export default CreateBlogPage;
-
-import { FilePicker } from '@capawesome/capacitor-file-picker';
-
-const pickCoverImage = async () => {
-  try {
-    const result = await FilePicker.pickImages({
-      multiple: false,
-    });
-
-    if (result.files.length === 0) return;
-
-    const file = result.files[0];
-
-    if (!file.blob) {
-      alert("Failed to read image");
-      return;
-    }
-
-    const uploadFile = new File([file.blob], file.name, { type: file.mimeType });
-
-    const { data, error } = await supabase.storage
-      .from('images')  // Change to your actual bucket name if different (e.g. 'covers', 'blog-images')
-      .upload(`public/${Date.now()}_${file.name}`, uploadFile, {
-        upsert: false,
-      });
-
-    if (error) {
-      console.error("Upload error:", error);
-      alert("Image upload failed: " + error.message);
-    } else {
-      console.log("Image uploaded:", data);
-      alert("Cover image uploaded successfully!");
-      // Optional: you can later use the public URL
-      // const { data: urlData } = supabase.storage.from('images').getPublicUrl(`public/${Date.now()}_${file.name}`);
-    }
-  } catch (err) {
-    console.error("Image picker error:", err);
-    alert("Could not select image. Try again.");
-  }
-};

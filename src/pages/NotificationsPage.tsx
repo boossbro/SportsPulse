@@ -1,10 +1,36 @@
 import { useState, useEffect } from 'react';
-import { Bell, Heart, MessageCircle, User, Repeat, AtSign } from 'lucide-react';
+import { Bell, Heart, MessageCircle, User, Repeat, AtSign, UserPlus, Loader2, Check } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { getNotifications, markNotificationAsRead, markAllNotificationsAsRead } from '../lib/api';
 
 const NotificationsPage = () => {
   const [notifications, setNotifications] = useState<any[]>([]);
   const [filter, setFilter] = useState<'all' | 'mentions' | 'likes'>('all');
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadNotifications();
+
+    // Poll for new notifications every 30 seconds
+    const interval = setInterval(loadNotifications, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const loadNotifications = async () => {
+    const data = await getNotifications();
+    setNotifications(data);
+    setLoading(false);
+  };
+
+  const handleMarkAsRead = async (id: string) => {
+    await markNotificationAsRead(id);
+    setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
+  };
+
+  const handleMarkAllAsRead = async () => {
+    await markAllNotificationsAsRead();
+    setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+  };
 
   const getTimeAgo = (dateString: string) => {
     const date = new Date(dateString);
@@ -28,9 +54,10 @@ const NotificationsPage = () => {
       case 'like':
         return <Heart className="w-6 h-6 text-red-500 fill-red-500" />;
       case 'comment':
+      case 'reply':
         return <MessageCircle className="w-6 h-6 text-blue-500" />;
       case 'follow':
-        return <User className="w-6 h-6 text-green-500" />;
+        return <UserPlus className="w-6 h-6 text-green-500" />;
       case 'repost':
         return <Repeat className="w-6 h-6 text-primary" />;
       case 'mention':
@@ -40,47 +67,67 @@ const NotificationsPage = () => {
     }
   };
 
-  // Mock notifications for demo
-  const mockNotifications = [
-    {
-      id: '1',
-      type: 'like',
-      user: { username: 'john_doe', avatar: null },
-      content: 'liked your post',
-      preview: 'Amazing story about technology trends...',
-      timestamp: new Date(Date.now() - 1000 * 60 * 5).toISOString(),
-      read: false,
-    },
-    {
-      id: '2',
-      type: 'comment',
-      user: { username: 'jane_smith', avatar: null },
-      content: 'commented on your post',
-      preview: 'Great insights! I especially liked...',
-      timestamp: new Date(Date.now() - 1000 * 60 * 30).toISOString(),
-      read: false,
-    },
-    {
-      id: '3',
-      type: 'follow',
-      user: { username: 'tech_writer', avatar: null },
-      content: 'started following you',
-      preview: null,
-      timestamp: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(),
-      read: true,
-    },
-  ];
+  const getNotificationLink = (notification: any) => {
+    if (notification.type === 'follow') {
+      return `/profile/${notification.actor_id}`;
+    }
+    
+    if (notification.content_type === 'blog_post') {
+      return `/story/${notification.content_id}`;
+    }
+    
+    if (notification.content_type === 'community_post') {
+      return `/community#${notification.content_id}`;
+    }
+    
+    if (notification.content_type === 'video') {
+      return `/videos#${notification.content_id}`;
+    }
+    
+    return '#';
+  };
 
-  useEffect(() => {
-    setNotifications(mockNotifications);
-  }, []);
+  const filteredNotifications = notifications.filter(n => {
+    if (filter === 'mentions') return n.type === 'mention';
+    if (filter === 'likes') return n.type === 'like';
+    return true;
+  });
+
+  const unreadCount = notifications.filter(n => !n.read).length;
+
+  if (loading) {
+    return (
+      <div className="max-w-2xl mx-auto min-h-screen bg-white pb-20">
+        <div className="flex items-center justify-center py-16">
+          <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-2xl mx-auto min-h-screen bg-white pb-20">
       {/* Header */}
       <div className="sticky top-14 bg-white z-10 border-b border-gray-200">
         <div className="px-4 py-3">
-          <h1 className="text-xl font-bold text-gray-900">Notifications</h1>
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <h1 className="text-xl font-bold text-gray-900">Notifications</h1>
+              {unreadCount > 0 && (
+                <p className="text-sm text-gray-600 mt-1">{unreadCount} unread</p>
+              )}
+            </div>
+            
+            {unreadCount > 0 && (
+              <button
+                onClick={handleMarkAllAsRead}
+                className="px-4 py-2 text-sm font-medium text-primary hover:bg-primary/10 rounded-lg transition-colors flex items-center gap-2"
+              >
+                <Check className="w-4 h-4" />
+                Mark all read
+              </button>
+            )}
+          </div>
         </div>
         
         {/* Filter Tabs */}
@@ -107,7 +154,7 @@ const NotificationsPage = () => {
 
       {/* Notifications List */}
       <div>
-        {notifications.length === 0 ? (
+        {filteredNotifications.length === 0 ? (
           <div className="text-center py-16 px-4">
             <Bell className="w-16 h-16 text-gray-300 mx-auto mb-4" />
             <h3 className="text-lg font-bold text-gray-900 mb-2">No notifications yet</h3>
@@ -116,10 +163,11 @@ const NotificationsPage = () => {
             </p>
           </div>
         ) : (
-          notifications.map((notification) => (
+          filteredNotifications.map((notification) => (
             <Link
               key={notification.id}
-              to={`/story/${notification.id}`}
+              to={getNotificationLink(notification)}
+              onClick={() => !notification.read && handleMarkAsRead(notification.id)}
               className={`block border-b border-gray-100 hover:bg-gray-50 transition-colors ${
                 !notification.read ? 'bg-blue-50/30' : ''
               }`}
@@ -134,39 +182,36 @@ const NotificationsPage = () => {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-start justify-between gap-2 mb-1">
                     <div className="flex items-center gap-2">
-                      <Link
-                        to={`/profile/${notification.user.username}`}
-                        className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center overflow-hidden"
-                      >
-                        {notification.user.avatar ? (
-                          <img
-                            src={notification.user.avatar}
-                            alt=""
-                            className="w-full h-full object-cover"
-                          />
-                        ) : (
-                          <User className="w-4 h-4 text-gray-500" />
-                        )}
-                      </Link>
+                      {notification.actor && (
+                        <Link
+                          to={`/profile/${notification.actor_id}`}
+                          className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center overflow-hidden"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {notification.actor.avatar_url ? (
+                            <img
+                              src={notification.actor.avatar_url}
+                              alt=""
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <User className="w-4 h-4 text-gray-500" />
+                          )}
+                        </Link>
+                      )}
                       <div>
                         <span className="font-semibold text-gray-900">
-                          {notification.user.username}
+                          {notification.actor?.username || 'Someone'}
                         </span>
                         <span className="text-gray-600 ml-1">
-                          {notification.content}
+                          {notification.message}
                         </span>
                       </div>
                     </div>
                     <span className="text-xs text-gray-500 whitespace-nowrap">
-                      {getTimeAgo(notification.timestamp)}
+                      {getTimeAgo(notification.created_at)}
                     </span>
                   </div>
-
-                  {notification.preview && (
-                    <p className="text-sm text-gray-600 mt-1 line-clamp-2">
-                      {notification.preview}
-                    </p>
-                  )}
                 </div>
 
                 {/* Unread Indicator */}

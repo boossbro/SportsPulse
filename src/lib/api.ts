@@ -200,6 +200,17 @@ export const followUser = async (followingId: string) => {
     });
 
     if (error) throw error;
+
+    // Notify user about new follower
+    await createNotification(
+      followingId,
+      'follow',
+      undefined,
+      undefined,
+      undefined,
+      'started following you'
+    );
+
     return { success: true, error: null };
   } catch (error: any) {
     return { success: false, error: error.message };
@@ -460,6 +471,9 @@ export const createBlogPost = async (post: any) => {
       }
     }
 
+    // Process mentions and send notifications
+    await processMentions(post.content + ' ' + post.title, 'blog_post', data.id);
+
     // Call AI moderation if published
     if (post.published) {
       await moderateContent(data.id, post.title, post.content, post.category);
@@ -638,6 +652,9 @@ export const createCommunityPost = async (content: string, media?: File) => {
 
     if (error) throw error;
 
+    // Process mentions and send notifications
+    await processMentions(content, 'community_post', data.id);
+
     // Process hashtags for community posts
     for (const tag of hashtags) {
       const { data: existingTag } = await supabase
@@ -676,6 +693,25 @@ export const likeCommunityPost = async (postId: string) => {
     });
 
     if (error) throw error;
+
+    // Notify post author about like
+    const { data: post } = await supabase
+      .from('community_posts')
+      .select('user_id')
+      .eq('id', postId)
+      .single();
+    
+    if (post) {
+      await createNotification(
+        post.user_id,
+        'like',
+        user.id,
+        'community_post',
+        postId,
+        'liked your post'
+      );
+    }
+
     return { success: true, error: null };
   } catch (error: any) {
     return { success: false, error: error.message };
@@ -799,6 +835,28 @@ export const addCommunityComment = async (postId: string, content: string) => {
     }).select('*, user_profiles(id, username, avatar_url)').single();
 
     if (error) throw error;
+
+    // Process mentions in comment
+    await processMentions(content, 'comment', data.id);
+
+    // Notify post author about comment
+    const { data: post } = await supabase
+      .from('community_posts')
+      .select('user_id')
+      .eq('id', postId)
+      .single();
+    
+    if (post) {
+      await createNotification(
+        post.user_id,
+        'comment',
+        user.id,
+        'community_post',
+        postId,
+        'commented on your post'
+      );
+    }
+
     return { data, error: null };
   } catch (error: any) {
     return { data: null, error: error.message };
@@ -898,6 +956,9 @@ export const uploadVideoStory = async (
     }).select('*, user_profiles(id, username, avatar_url)').single();
 
     if (error) throw error;
+
+    // Process mentions and send notifications
+    await processMentions(title + ' ' + description, 'video', data.id);
 
     // Process hashtags for videos
     for (const tag of hashtags) {
@@ -1084,6 +1145,28 @@ export const addVideoComment = async (videoId: string, content: string) => {
     }).select('*, user_profiles(id, username, avatar_url)').single();
 
     if (error) throw error;
+
+    // Process mentions in comment
+    await processMentions(content, 'comment', data.id);
+
+    // Notify video author about comment
+    const { data: video } = await supabase
+      .from('video_stories')
+      .select('user_id')
+      .eq('id', videoId)
+      .single();
+    
+    if (video) {
+      await createNotification(
+        video.user_id,
+        'comment',
+        user.id,
+        'video',
+        videoId,
+        'commented on your video'
+      );
+    }
+
     return { data, error: null };
   } catch (error: any) {
     return { data: null, error: error.message };
@@ -1297,6 +1380,25 @@ export const likeBlogPost = async (postId: string) => {
     });
 
     if (error) throw error;
+
+    // Notify post author about like
+    const { data: post } = await supabase
+      .from('blog_posts')
+      .select('user_id')
+      .eq('id', postId)
+      .single();
+    
+    if (post) {
+      await createNotification(
+        post.user_id,
+        'like',
+        user.id,
+        'blog_post',
+        postId,
+        'liked your post'
+      );
+    }
+
     return { success: true, error: null };
   } catch (error: any) {
     return { success: false, error: error.message };
@@ -1446,6 +1548,28 @@ export const addBlogComment = async (postId: string, content: string, parentId?:
     }).select('*, user_profiles(id, username, avatar_url)').single();
 
     if (error) throw error;
+
+    // Process mentions in comment
+    await processMentions(content, 'comment', data.id);
+
+    // Notify post author about comment
+    const { data: post } = await supabase
+      .from('blog_posts')
+      .select('user_id')
+      .eq('id', postId)
+      .single();
+    
+    if (post) {
+      await createNotification(
+        post.user_id,
+        'comment',
+        user.id,
+        'blog_post',
+        postId,
+        'commented on your post'
+      );
+    }
+
     return { data, error: null };
   } catch (error: any) {
     return { data: null, error: error.message };
@@ -1862,5 +1986,271 @@ export const getUserRepostedContent = async (userId: string, params?: Pagination
   } catch (error: any) {
     console.error('Error fetching reposted content:', error);
     return { data: [], hasMore: false, total: 0 };
+  }
+};
+
+// ============================================
+// HASHTAG FOLLOWING SYSTEM
+// ============================================
+
+export const followHashtag = async (hashtagId: string) => {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Not authenticated');
+
+    const { error } = await supabase.from('hashtag_follows').insert({
+      user_id: user.id,
+      hashtag_id: hashtagId,
+    });
+
+    if (error) throw error;
+    return { success: true, error: null };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+};
+
+export const unfollowHashtag = async (hashtagId: string) => {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Not authenticated');
+
+    const { error } = await supabase.from('hashtag_follows').delete()
+      .eq('user_id', user.id)
+      .eq('hashtag_id', hashtagId);
+
+    if (error) throw error;
+    return { success: true, error: null };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+};
+
+export const checkIsFollowingHashtag = async (hashtagId: string) => {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return false;
+
+    const { data, error } = await supabase
+      .from('hashtag_follows')
+      .select('id')
+      .eq('user_id', user.id)
+      .eq('hashtag_id', hashtagId)
+      .maybeSingle();
+
+    if (error) throw error;
+    return !!data;
+  } catch (error: any) {
+    return false;
+  }
+};
+
+export const getFollowedHashtags = async () => {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return [];
+
+    const { data, error } = await supabase
+      .from('hashtag_follows')
+      .select('hashtags(*)')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    return data?.map((item: any) => item.hashtags) || [];
+  } catch (error: any) {
+    console.error('Error fetching followed hashtags:', error);
+    return [];
+  }
+};
+
+export const getHashtagByTag = async (tag: string) => {
+  try {
+    const { data, error } = await supabase
+      .from('hashtags')
+      .select('*')
+      .eq('tag', tag.toLowerCase())
+      .maybeSingle();
+
+    if (error) throw error;
+    return data;
+  } catch (error: any) {
+    console.error('Error fetching hashtag:', error);
+    return null;
+  }
+};
+
+// ============================================
+// NOTIFICATIONS SYSTEM
+// ============================================
+
+export const createNotification = async (
+  userId: string,
+  type: string,
+  actorId?: string,
+  contentType?: string,
+  contentId?: string,
+  message?: string
+) => {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user || user.id === userId) return; // Don't notify self
+
+    const { error } = await supabase.from('notifications').insert({
+      user_id: userId,
+      actor_id: actorId || user.id,
+      type,
+      content_type: contentType,
+      content_id: contentId,
+      message,
+    });
+
+    if (error) throw error;
+  } catch (error: any) {
+    console.error('Error creating notification:', error);
+  }
+};
+
+export const getNotifications = async (limit = 50) => {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return [];
+
+    const { data, error } = await supabase
+      .from('notifications')
+      .select(`
+        *,
+        actor:user_profiles!notifications_actor_id_fkey(id, username, avatar_url)
+      `)
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+
+    if (error) throw error;
+    return data || [];
+  } catch (error: any) {
+    console.error('Error fetching notifications:', error);
+    return [];
+  }
+};
+
+export const markNotificationAsRead = async (notificationId: string) => {
+  try {
+    const { error } = await supabase
+      .from('notifications')
+      .update({ read: true })
+      .eq('id', notificationId);
+
+    if (error) throw error;
+    return { success: true, error: null };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+};
+
+export const markAllNotificationsAsRead = async () => {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Not authenticated');
+
+    const { error } = await supabase
+      .from('notifications')
+      .update({ read: true })
+      .eq('user_id', user.id)
+      .eq('read', false);
+
+    if (error) throw error;
+    return { success: true, error: null };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+};
+
+export const getUnreadNotificationsCount = async () => {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return 0;
+
+    const { count, error } = await supabase
+      .from('notifications')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', user.id)
+      .eq('read', false);
+
+    if (error) throw error;
+    return count || 0;
+  } catch (error: any) {
+    console.error('Error fetching unread count:', error);
+    return 0;
+  }
+};
+
+// Process mentions and create notifications
+const processMentions = async (content: string, contentType: string, contentId: string) => {
+  const mentions = extractMentions(content);
+  
+  for (const mention of mentions) {
+    const { data: mentionedUser } = await supabase
+      .from('user_profiles')
+      .select('id')
+      .eq('username', mention)
+      .maybeSingle();
+
+    if (mentionedUser) {
+      await createNotification(
+        mentionedUser.id,
+        'mention',
+        undefined,
+        contentType,
+        contentId,
+        `mentioned you in a ${contentType.replace('_', ' ')}`
+      );
+    }
+  }
+};
+
+// ============================================
+// USER DIRECTORY
+// ============================================
+
+export const getAllUsers = async (params?: PaginationParams) => {
+  try {
+    const page = params?.page || 1;
+    const limit = params?.limit || 20;
+    const from = (page - 1) * limit;
+    const to = from + limit - 1;
+
+    const { data, error, count } = await supabase
+      .from('user_profiles')
+      .select('id, username, email, avatar_url, bio, followers_count, posts_count', { count: 'exact' })
+      .order('followers_count', { ascending: false })
+      .range(from, to);
+
+    if (error) throw error;
+    
+    return {
+      data: data || [],
+      hasMore: (data?.length || 0) === limit,
+      total: count || 0,
+    };
+  } catch (error: any) {
+    console.error('Error fetching users:', error);
+    return { data: [], hasMore: false, total: 0 };
+  }
+};
+
+export const getUserByUsername = async (username: string) => {
+  try {
+    const { data, error } = await supabase
+      .from('user_profiles')
+      .select('*')
+      .eq('username', username)
+      .maybeSingle();
+
+    if (error) throw error;
+    return data;
+  } catch (error: any) {
+    console.error('Error fetching user by username:', error);
+    return null;
   }
 };

@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../stores/authStore';
 import { getConversations, getMessages, sendMessage } from '../lib/api';
-import { Loader2, Send, User, MessageCircle } from 'lucide-react';
+import { Loader2, Send, User, MessageCircle, Edit } from 'lucide-react';
+import { Link } from 'react-router-dom';
 
 const MessagesPage = () => {
   const { user } = useAuth();
@@ -83,8 +84,15 @@ const MessagesPage = () => {
       <div className="flex h-full bg-card">
         {/* Conversations List */}
         <div className="w-80 border-r border-border flex-shrink-0 overflow-y-auto">
-          <div className="px-4 py-4 border-b border-border">
+          <div className="px-4 py-4 border-b border-border flex items-center justify-between">
             <h2 className="text-lg font-bold text-foreground">Messages</h2>
+            <Link
+              to="/messages/compose"
+              className="p-2 bg-primary text-white rounded-full hover:bg-red-600 transition-colors"
+              title="New message"
+            >
+              <Edit className="w-5 h-5" />
+            </Link>
           </div>
           
           {conversations.length === 0 ? (

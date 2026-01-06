@@ -1,22 +1,35 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { getAllContentByHashtag, getAllHashtagsWithContent } from '../lib/api';
-import { Hash, TrendingUp, Loader2, Image as ImageIcon, Video, FileText, User, Heart, MessageCircle, Eye } from 'lucide-react';
+import { 
+  getAllContentByHashtag, 
+  getAllHashtagsWithContent, 
+  getHashtagByTag,
+  followHashtag,
+  unfollowHashtag,
+  checkIsFollowingHashtag,
+  getFollowedHashtags
+} from '../lib/api';
+import { Hash, TrendingUp, Loader2, Video, FileText, User, Heart, MessageCircle, Eye, Plus, Check, Bell } from 'lucide-react';
 import { ClickableText } from '../components/common/ClickableText';
 
 const HashtagPage = () => {
   const { tag } = useParams();
   const [content, setContent] = useState<any[]>([]);
   const [trendingTags, setTrendingTags] = useState<any[]>([]);
+  const [followedTags, setFollowedTags] = useState<any[]>([]);
+  const [currentHashtag, setCurrentHashtag] = useState<any>(null);
+  const [isFollowing, setIsFollowing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [page, setPage] = useState(1);
+  const [filterType, setFilterType] = useState<'all' | 'blog' | 'video'>('all');
   const observerTarget = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     loadInitialContent();
     loadTrendingTags();
+    loadFollowedHashtags();
   }, [tag]);
 
   useEffect(() => {
@@ -45,9 +58,18 @@ const HashtagPage = () => {
     setPage(1);
     
     if (tag) {
-      const result = await getAllContentByHashtag(tag, { page: 1, limit: 20 });
-      setContent(result.data);
-      setHasMore(result.hasMore);
+      const hashtagData = await getHashtagByTag(tag);
+      if (hashtagData) {
+        const [result, followStatus] = await Promise.all([
+          getAllContentByHashtag(tag, { page: 1, limit: 20 }),
+          checkIsFollowingHashtag(hashtagData.id)
+        ]);
+        
+        setContent(result.data);
+        setHasMore(result.hasMore);
+        setCurrentHashtag(hashtagData);
+        setIsFollowing(followStatus);
+      }
     }
     
     setLoading(false);
@@ -70,6 +92,41 @@ const HashtagPage = () => {
     const tags = await getAllHashtagsWithContent(15);
     setTrendingTags(tags);
   };
+
+  const loadFollowedHashtags = async () => {
+    const tags = await getFollowedHashtags();
+    setFollowedTags(tags);
+  };
+
+  const handleFollowToggle = async () => {
+    if (!currentHashtag) return;
+    
+    if (isFollowing) {
+      const result = await unfollowHashtag(currentHashtag.id);
+      if (result.success) {
+        setIsFollowing(false);
+        setCurrentHashtag((prev: any) => ({
+          ...prev,
+          followers_count: Math.max(0, (prev?.followers_count || 0) - 1)
+        }));
+        loadFollowedHashtags();
+      }
+    } else {
+      const result = await followHashtag(currentHashtag.id);
+      if (result.success) {
+        setIsFollowing(true);
+        setCurrentHashtag((prev: any) => ({
+          ...prev,
+          followers_count: (prev?.followers_count || 0) + 1
+        }));
+        loadFollowedHashtags();
+      }
+    }
+  };
+
+  const filteredContent = filterType === 'all' 
+    ? content 
+    : content.filter(item => item.type === filterType);
 
   const getTimeAgo = (dateString: string) => {
     const date = new Date(dateString);
@@ -95,21 +152,88 @@ const HashtagPage = () => {
           {/* Main Content */}
           <div className="lg:col-span-8 bg-white">
             {/* Header */}
-            <div className="sticky top-14 bg-white z-10 border-b border-gray-200 p-4">
+            <div className="sticky top-14 bg-white z-10 border-b border-gray-200">
               {tag ? (
-                <div>
-                  <div className="flex items-center gap-3 mb-2">
-                    <Hash className="w-6 h-6 text-primary" />
-                    <h1 className="text-2xl font-bold text-gray-900">{tag}</h1>
+                <div className="p-4">
+                  <div className="flex items-start justify-between mb-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-14 h-14 bg-primary/10 rounded-full flex items-center justify-center">
+                        <Hash className="w-7 h-7 text-primary" />
+                      </div>
+                      <div>
+                        <h1 className="text-2xl font-bold text-gray-900">{tag}</h1>
+                        {currentHashtag && (
+                          <div className="flex items-center gap-3 mt-1 text-sm text-gray-600">
+                            <span>{currentHashtag.usage_count?.toLocaleString()} posts</span>
+                            <span>•</span>
+                            <span>{currentHashtag.followers_count?.toLocaleString() || 0} followers</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    
+                    <button
+                      onClick={handleFollowToggle}
+                      className={`px-5 py-2 rounded-full font-bold transition-all flex items-center gap-2 ${
+                        isFollowing
+                          ? 'bg-gray-200 text-gray-900 hover:bg-gray-300'
+                          : 'bg-primary text-white hover:bg-red-600'
+                      }`}
+                    >
+                      {isFollowing ? (
+                        <>
+                          <Check className="w-4 h-4" />
+                          Following
+                        </>
+                      ) : (
+                        <>
+                          <Plus className="w-4 h-4" />
+                          Follow
+                        </>
+                      )}
+                    </button>
                   </div>
-                  {content.length > 0 && (
-                    <p className="text-sm text-gray-600">
-                      {content.length} {content.length === 1 ? 'post' : 'posts'}
-                    </p>
-                  )}
+
+                  {/* Filter Tabs */}
+                  <div className="flex gap-2 mt-4">
+                    <button
+                      onClick={() => setFilterType('all')}
+                      className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
+                        filterType === 'all'
+                          ? 'bg-primary text-white'
+                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }`}
+                    >
+                      All ({content.length})
+                    </button>
+                    <button
+                      onClick={() => setFilterType('blog')}
+                      className={`px-4 py-2 rounded-full text-sm font-medium transition-colors flex items-center gap-2 ${
+                        filterType === 'blog'
+                          ? 'bg-primary text-white'
+                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }`}
+                    >
+                      <FileText className="w-4 h-4" />
+                      Articles ({content.filter(c => c.type === 'blog').length})
+                    </button>
+                    <button
+                      onClick={() => setFilterType('video')}
+                      className={`px-4 py-2 rounded-full text-sm font-medium transition-colors flex items-center gap-2 ${
+                        filterType === 'video'
+                          ? 'bg-primary text-white'
+                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }`}
+                    >
+                      <Video className="w-4 h-4" />
+                      Videos ({content.filter(c => c.type === 'video').length})
+                    </button>
+                  </div>
                 </div>
               ) : (
-                <h1 className="text-2xl font-bold text-gray-900">Trending Hashtags</h1>
+                <div className="p-4">
+                  <h1 className="text-2xl font-bold text-gray-900">Trending Hashtags</h1>
+                </div>
               )}
             </div>
 
@@ -118,24 +242,23 @@ const HashtagPage = () => {
               <div className="flex items-center justify-center py-16">
                 <Loader2 className="w-8 h-8 animate-spin text-primary" />
               </div>
-            ) : tag && content.length === 0 ? (
+            ) : tag && filteredContent.length === 0 ? (
               <div className="text-center py-16 px-4">
                 <Hash className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-                <h3 className="text-lg font-bold text-gray-900 mb-2">No posts yet</h3>
+                <h3 className="text-lg font-bold text-gray-900 mb-2">No {filterType === 'all' ? '' : filterType === 'blog' ? 'articles' : 'videos'} yet</h3>
                 <p className="text-sm text-gray-600">
                   Be the first to post with #{tag}
                 </p>
               </div>
             ) : tag ? (
               <div>
-                {content.map((item) => (
+                {filteredContent.map((item) => (
                   <Link
                     key={`${item.type}-${item.id}`}
-                    to={item.type === 'blog' ? `/story/${item.id}` : `/video/${item.id}`}
+                    to={item.type === 'blog' ? `/story/${item.id}` : `/videos#${item.id}`}
                     className="block border-b border-gray-100 p-4 hover:bg-gray-50 transition-colors"
                   >
                     <div className="flex gap-3">
-                      {/* Author */}
                       <Link
                         to={`/profile/${item.user_id}`}
                         onClick={(e) => e.stopPropagation()}
@@ -154,7 +277,6 @@ const HashtagPage = () => {
                         </div>
                       </Link>
 
-                      {/* Content */}
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1">
                           <span className="font-semibold text-gray-900">
@@ -192,7 +314,6 @@ const HashtagPage = () => {
                           />
                         )}
 
-                        {/* Media Preview */}
                         {(item.cover_image || item.thumbnail_url) && (
                           <div className="relative mt-2 rounded-lg overflow-hidden bg-gray-100">
                             <img
@@ -210,7 +331,6 @@ const HashtagPage = () => {
                           </div>
                         )}
 
-                        {/* Stats */}
                         <div className="flex items-center gap-4 mt-3 text-sm text-gray-500">
                           <div className="flex items-center gap-1">
                             <Eye className="w-4 h-4" />
@@ -224,31 +344,19 @@ const HashtagPage = () => {
                             <MessageCircle className="w-4 h-4" />
                             <span>{item.comments_count || 0}</span>
                           </div>
-                          {item.type === 'blog' ? (
-                            <div className="flex items-center gap-1">
-                              <FileText className="w-4 h-4" />
-                              <span>Article</span>
-                            </div>
-                          ) : (
-                            <div className="flex items-center gap-1">
-                              <Video className="w-4 h-4" />
-                              <span>Video</span>
-                            </div>
-                          )}
                         </div>
                       </div>
                     </div>
                   </Link>
                 ))}
 
-                {/* Loading More Indicator */}
                 {hasMore && (
                   <div ref={observerTarget} className="py-8 flex justify-center">
                     {loadingMore && <Loader2 className="w-6 h-6 animate-spin text-primary" />}
                   </div>
                 )}
 
-                {!hasMore && content.length > 0 && (
+                {!hasMore && filteredContent.length > 0 && (
                   <div className="py-8 text-center text-sm text-gray-500">
                     You've reached the end
                   </div>
@@ -263,14 +371,49 @@ const HashtagPage = () => {
             )}
           </div>
 
-          {/* Sidebar - Trending Hashtags */}
+          {/* Sidebar */}
           <div className="hidden lg:block lg:col-span-4">
-            <div className="sticky top-14 pt-4">
+            <div className="sticky top-14 pt-4 space-y-4">
+              {followedTags.length > 0 && (
+                <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                  <div className="p-4 border-b border-gray-200">
+                    <div className="flex items-center gap-2">
+                      <Bell className="w-5 h-5 text-primary" />
+                      <h2 className="text-lg font-bold text-gray-900">Following</h2>
+                    </div>
+                  </div>
+
+                  <div className="divide-y divide-gray-100 max-h-96 overflow-y-auto">
+                    {followedTags.map((hashtag) => (
+                      <Link
+                        key={hashtag.id}
+                        to={`/hashtag/${hashtag.tag}`}
+                        className={`block p-4 hover:bg-gray-50 transition-colors ${
+                          tag === hashtag.tag ? 'bg-blue-50' : ''
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <Hash className="w-4 h-4 text-primary" />
+                          <div className="flex-1 min-w-0">
+                            <div className="font-bold text-gray-900 truncate">
+                              {hashtag.tag}
+                            </div>
+                            <p className="text-sm text-gray-600">
+                              {hashtag.usage_count?.toLocaleString()} posts
+                            </p>
+                          </div>
+                        </div>
+                      </Link>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
                 <div className="p-4 border-b border-gray-200">
                   <div className="flex items-center gap-2">
                     <TrendingUp className="w-5 h-5 text-primary" />
-                    <h2 className="text-lg font-bold text-gray-900">Trending Hashtags</h2>
+                    <h2 className="text-lg font-bold text-gray-900">Trending</h2>
                   </div>
                 </div>
 
@@ -296,15 +439,8 @@ const HashtagPage = () => {
                               </span>
                             </div>
                             <p className="text-sm text-gray-600">
-                              {hashtag.usage_count.toLocaleString()} {hashtag.usage_count === 1 ? 'post' : 'posts'}
+                              {hashtag.usage_count?.toLocaleString()} posts
                             </p>
-                            {(hashtag.blog_count > 0 || hashtag.video_count > 0) && (
-                              <div className="flex items-center gap-2 mt-1 text-xs text-gray-500">
-                                {hashtag.blog_count > 0 && <span>{hashtag.blog_count} articles</span>}
-                                {hashtag.blog_count > 0 && hashtag.video_count > 0 && <span>•</span>}
-                                {hashtag.video_count > 0 && <span>{hashtag.video_count} videos</span>}
-                              </div>
-                            )}
                           </div>
                         </div>
                         <TrendingUp className="w-5 h-5 text-green-500" />

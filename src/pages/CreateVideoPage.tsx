@@ -1,4 +1,3 @@
-import { FilePicker } from '@capawesome/capacitor-file-picker';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../stores/authStore';
@@ -269,44 +268,3 @@ const CreateVideoPage = () => {
 };
 
 export default CreateVideoPage;
-
-import { FilePicker } from '@capawesome/capacitor-file-picker';
-
-const pickAndUploadVideo = async () => {
-  try {
-    const result = await FilePicker.pickVideos({
-      multiple: false,
-    });
-
-    if (result.files.length === 0) return;
-
-    const file = result.files[0];
-
-    if (!file.blob) {
-      alert("Failed to read video file");
-      return;
-    }
-
-    const uploadFile = new File([file.blob], file.name, { type: file.mimeType });
-
-    // Change 'videos' to your actual Supabase bucket name if it's different
-    const { data, error } = await supabase.storage
-      .from('videos')
-      .upload(`public/${Date.now()}_${file.name}`, uploadFile, {
-        upsert: false,
-      });
-
-    if (error) {
-      console.error("Upload error:", error);
-      alert("Upload failed: " + error.message);
-    } else {
-      console.log("Video uploaded:", data);
-      alert("Video uploaded successfully!");
-      // Refresh the page to show the new video
-      window.location.reload();
-    }
-  } catch (err) {
-    console.error("Video picker error:", err);
-    alert("Could not select video. Please try again.");
-  }
-};
