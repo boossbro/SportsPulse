@@ -647,3 +647,53 @@ const CommunityPage = () => {
 };
 
 export default CommunityPage;
+
+import { FilePicker } from '@capawesome/capacitor-file-picker';
+
+const pickAndUploadTweet = async (tweetText: string) => {  // Pass text from a form input
+  try {
+    // Optional media picker (for image/video attachment to tweet)
+    const result = await FilePicker.pickMedia({
+      multiple: false,
+    });
+
+    let mediaUrl = '';
+    if (result.files.length > 0) {
+      const file = result.files[0];
+      if (!file.blob) {
+        alert("Failed to read media");
+        return;
+      }
+      const uploadFile = new File([file.blob], file.name, { type: file.mimeType });
+
+      const { data, error } = await supabase.storage
+        .from('community')  // Change to your Supabase bucket for community posts/tweets
+        .upload(`public/${Date.now()}_${file.name}`, uploadFile, {
+          upsert: false,
+        });
+
+      if (error) {
+        alert("Media upload failed: " + error.message);
+        return;
+      }
+      // Get public URL for the media
+      const { data: urlData } = supabase.storage.from('community').getPublicUrl(`public/${Date.now()}_${file.name}`);
+      mediaUrl = urlData.publicUrl;
+    }
+
+    // Now insert the tweet/post into Supabase database (adjust table name, e.g., 'community_posts')
+    const { error: postError } = await supabase
+      .from('community_posts')
+      .insert([{ text: tweetText, media_url: mediaUrl, user_id: 'current_user_id' }]);  // Replace 'current_user_id' with auth logic
+
+    if (postError) {
+      alert("Post failed: " + postError.message);
+    } else {
+      alert("Tweet posted successfully!");
+      window.location.reload();  // Refresh community feed
+    }
+  } catch (err) {
+    console.error("Picker error:", err);
+    alert("Could not create post");
+  }
+};
